@@ -1,0 +1,62 @@
+# Builds RSM.exe on Windows and attaches it to a GitHub release.
+# How to release: GitHub → Releases → "Draft a new release" → tag like v0.14.0 → Publish.
+# A few minutes later RSM.exe (+ RSM.exe.sha256) appear on the release, and every RSM
+# that checks for updates offers the new version.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re)build, e.g. v0.14.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Version from tag
+        id: v
+        shell: pwsh
+        run: |
+          $ver = $env:TAG.TrimStart('v','V').Split('-')[0]
+          if ($ver -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Tag '$($env:TAG)' is not a version like v0.14.0" }
+          "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet run --project tests/RSM.Core.Tests -c Release
+
+      - name: Publish RSM.exe
+        run: >
+          dotnet publish src/RSM.App -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -p:DebugType=none
+          -p:Version=${{ steps.v.outputs.version }}
+          -p:UpdateRepository=${{ github.repository }}
+          -o publish
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash publish/RSM.exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path publish/RSM.exe.sha256 -Value "$hash  RSM.exe" -NoNewline -Encoding ascii
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ env.TAG }}" publish/RSM.exe publish/RSM.exe.sha256 --clobber --repo "${{ github.repository }}"
