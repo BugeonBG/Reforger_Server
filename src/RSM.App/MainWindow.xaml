@@ -1,0 +1,1683 @@
+<Window x:Class="RSM.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:RSM.App"
+        Title="{Binding WindowTitle}"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Width="1440" Height="900" MinWidth="1080" MinHeight="660"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}"
+        Foreground="{StaticResource TextBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="13.5"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+    <!-- our own title bar: the dark theme reaches the top edge -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <local:HistoryGeometryConverter x:Key="HistoryGeo" />
+        <local:LogLineBrushConverter x:Key="LogBrush" />
+
+        <!-- log explanation: coloured badge by severity (good / info / harmless / caution / problem) -->
+        <Style x:Key="SeverityBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="#228FA3B8" />
+            <Setter Property="TextElement.Foreground" Value="#9FB2C6" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SeverityKey}" Value="good">
+                    <Setter Property="Background" Value="#229DD06F" />
+                    <Setter Property="TextElement.Foreground" Value="#9DD06F" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SeverityKey}" Value="harmless">
+                    <Setter Property="Background" Value="#228A8D80" />
+                    <Setter Property="TextElement.Foreground" Value="#A3A698" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SeverityKey}" Value="caution">
+                    <Setter Property="Background" Value="#22E3B04F" />
+                    <Setter Property="TextElement.Foreground" Value="#E3B04F" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SeverityKey}" Value="problem">
+                    <Setter Property="Background" Value="#26EE7B63" />
+                    <Setter Property="TextElement.Foreground" Value="#EE7B63" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- one explanation: badge, title, meaning, what to do, where it came from -->
+        <DataTemplate x:Key="ExplanationTemplate">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource SeverityBadge}">
+                        <TextBlock Text="{Binding SeverityText}" FontSize="11.5" FontWeight="SemiBold" />
+                    </Border>
+                    <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold" Text="{Binding Title}" TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" LineHeight="20" Foreground="{StaticResource TextBrush}" Text="{Binding Meaning}" />
+                <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="6" Background="{StaticResource AmberTintBrush}"
+                        Visibility="{Binding HasAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="할 일" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AmberBrush}" />
+                        <TextBlock Margin="0,3,0,0" TextWrapping="Wrap" LineHeight="20" Text="{Binding Action}" />
+                    </StackPanel>
+                </Border>
+                <TextBlock Margin="0,8,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}" TextWrapping="Wrap">
+                    <Run Text="출처: " /><Run Text="{Binding Module, Mode=OneWay}" />
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Window.InputBindings>
+        <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveConfigCommand}" />
+    </Window.InputBindings>
+
+    <Border BorderBrush="#3A4033" BorderThickness="1">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Style.Triggers>
+                    <!-- a maximized custom-chrome window hangs 7px past the screen edge -->
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                        <Setter Property="Margin" Value="7" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="232" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!--=================================================================== sidebar -->
+            <Border Grid.Column="0" Background="{StaticResource SideBrush}" BorderBrush="#2A2F25" BorderThickness="0,0,1,0">
+                <DockPanel>
+
+                    <!-- brand (part of the draggable title area) -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Height="44" Margin="18,0,0,0">
+                        <Image Source="pack://application:,,,/Assets/logo-64.png" Width="20" Height="20" VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
+                        <TextBlock Text="리포저 서버 관리자" Margin="10,0,0,0" VerticalAlignment="Center"
+                                   FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+
+                    <!-- server state: the one thing you look at first -->
+                    <Border DockPanel.Dock="Top" Margin="14,6,14,18" Padding="16,16,16,14" CornerRadius="10"
+                            Background="{StaticResource StateCardBrush}" BorderBrush="{StaticResource StateCardLineBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Grid Width="22" Height="22" VerticalAlignment="Center">
+                                    <Ellipse Width="22" Height="22">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="Transparent" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsServerRunning}" Value="True">
+                                                        <Setter Property="Fill" Value="{StaticResource RunHaloBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <Ellipse Width="12" Height="12">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{StaticResource OffBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsServerRunning}" Value="True">
+                                                        <Setter Property="Fill" Value="{StaticResource RunBrush}" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="{StaticResource RunColor}" BlurRadius="14" ShadowDepth="0" Opacity="0.8" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                </Grid>
+                                <TextBlock Margin="8,0,0,0" FontSize="22" FontWeight="Bold" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="꺼짐" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsServerRunning}" Value="True">
+                                                    <Setter Property="Text" Value="실행 중" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+
+                            <Grid Margin="0,6,0,14">
+                                <TextBlock Text="설정을 저장하고 서버를 켭니다" FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsServerRunning}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <StackPanel Visibility="{Binding IsServerRunning, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}">
+                                        <Run Text="게임" />
+                                        <Run Text="UDP" FontFamily="{StaticResource MonoFont}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" /><Run
+                                             Text=" " /><Run Text="{Binding BindPort, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                                    </TextBlock>
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"
+                                               Text="{Binding SelectedScenario.DisplayName, FallbackValue='사용자 지정 시나리오'}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Button Command="{Binding StartServerCommand}" ToolTip="설정을 저장한 뒤 서버를 켭니다.">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource BigStart}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsServerRunning}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE768;" FontSize="13" Margin="0,0,8,0" />
+                                    <TextBlock Text="서버 시작" />
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding StopServerCommand}" Style="{StaticResource BigStop}"
+                                    Visibility="{Binding IsServerRunning, Converter={StaticResource BoolToVis}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE71A;" FontSize="13" Margin="0,0,8,0" />
+                                    <TextBlock Text="서버 중지" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- save + version, pinned to the bottom -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="14,0,14,12">
+                        <Button Command="{Binding SaveConfigCommand}" ToolTip="config.json에 저장합니다 (Ctrl+S)" HorizontalAlignment="Stretch" MinHeight="36">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource AmberBrush}" />
+                                            <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                            <Setter Property="Background" Value="{StaticResource AmberTintBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="모두 저장됨" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                                                    <Setter Property="Text" Value="● 변경 사항 저장" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Border Margin="8,0,0,0" Padding="5,0" CornerRadius="4" BorderThickness="1" BorderBrush="{StaticResource Line2Brush}" VerticalAlignment="Center">
+                                    <TextBlock Text="Ctrl+S" FontSize="11" Foreground="{StaticResource FaintBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Button>
+                        <!-- version; becomes an update button when GitHub has a newer RSM -->
+                        <TextBlock Text="{Binding AppVersionText}" Margin="4,10,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}" />
+                        <Button Margin="0,8,0,0" HorizontalAlignment="Stretch" Style="{StaticResource Primary}" MinHeight="32" FontSize="12.5"
+                                Content="{Binding AppUpdateButtonText}" Command="{Binding InstallAppUpdateCommand}"
+                                Visibility="{Binding AppUpdateAvailable, Converter={StaticResource BoolToVis}}"
+                                ToolTip="새 RSM을 받아서 바꾼 뒤 다시 켭니다. 설정과 모드는 그대로입니다." />
+                    </StackPanel>
+
+                    <!-- navigation -->
+                    <StackPanel Margin="10,0">
+                        <RadioButton x:Name="NavInstall" Style="{StaticResource NavItem}" Tag="&#xE896;" Content="서버 설치" />
+                        <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="&#xE9E9;" Content="서버 설정" IsChecked="True" />
+                        <RadioButton x:Name="NavMonitor" Style="{StaticResource NavItem}" Tag="&#xE9D9;" Content="서버 현황" />
+                        <RadioButton x:Name="NavMods" Style="{StaticResource NavItem}" Tag="&#xE8F1;">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" CornerRadius="9" Padding="8,1" Background="{StaticResource RaisedBrush}" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding ModsBadgeText}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                </Border>
+                                <TextBlock Text="모드" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="NavBrowse" Style="{StaticResource NavItem}" Tag="&#xE774;" Content="워크숍" Checked="OnBrowseOpened" />
+                        <RadioButton x:Name="NavFile" Style="{StaticResource NavItem}" Tag="&#xE8A5;" Content="설정 파일" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!--=================================================================== main -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="44" />
+                    <RowDefinition x:Name="PageRow" Height="*" MinHeight="200" />
+                    <RowDefinition x:Name="SplitterRow" Height="8" />
+                    <RowDefinition x:Name="ConsoleRow" Height="300" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <!-- caption buttons -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <Button Style="{StaticResource Caption}" Content="&#xE921;" Click="OnMinimize" ToolTip="최소화" />
+                    <Button Click="OnMaximize">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Caption}">
+                                <Setter Property="Content" Value="&#xE922;" />
+                                <Setter Property="ToolTip" Value="최대화" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                        <Setter Property="Content" Value="&#xE923;" />
+                                        <Setter Property="ToolTip" Value="이전 크기로" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Style="{StaticResource CaptionClose}" Content="&#xE8BB;" Click="OnClose" ToolTip="닫기" />
+                </StackPanel>
+
+                <!--============================================ pages -->
+                <Grid Grid.Row="1">
+
+                    <!-- 서버 설치 -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding IsChecked, ElementName=NavInstall, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Margin="36,4,36,20">
+                            <TextBlock Style="{StaticResource H1}" Text="서버 설치" />
+                            <TextBlock Style="{StaticResource Lede}" Text="SteamCMD로 서버 파일을 내려받고, 게임이 업데이트되면 여기서 서버도 같이 올립니다." />
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="설치 위치" />
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource Key}" Text="SteamCMD 폴더" />
+                                                <TextBlock Style="{StaticResource KeyHint}" Text="없으면 자동으로 받습니다" />
+                                            </StackPanel>
+                                            <DockPanel Grid.Column="1">
+                                                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="찾아보기" Command="{Binding BrowseSteamCmdDirCommand}" />
+                                                <TextBox Text="{Binding SteamCmdDir, UpdateSourceTrigger=LostFocus}" />
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="서버 폴더" />
+                                            <DockPanel Grid.Column="1">
+                                                <Button DockPanel.Dock="Right" Margin="4,0,0,0" Style="{StaticResource Ghost}" Content="열기" Command="{Binding OpenServerDirCommand}" />
+                                                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="찾아보기" Command="{Binding BrowseServerDirCommand}" />
+                                                <TextBox Text="{Binding ServerDir, UpdateSourceTrigger=LostFocus}" />
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="실험 버전" />
+                                            <CheckBox Grid.Column="1" Style="{StaticResource Toggle}" IsChecked="{Binding UseExperimental}">
+                                                <TextBlock Text="실험(Experimental) 버전 게임으로만 접속할 수 있습니다" Foreground="{StaticResource MutedBrush}" />
+                                            </CheckBox>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,28">
+                                <Button Style="{StaticResource Primary}" Command="{Binding InstallOrUpdateCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Icon}" Text="&#xE896;" Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding InstallButtonText}" />
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock Margin="16,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="● 아직 설치되지 않음" />
+                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ServerInstalled}" Value="True">
+                                                    <Setter Property="Text" Value="● 설치됨" />
+                                                    <Setter Property="Foreground" Value="{StaticResource RunBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Margin="14,0,0,0" Style="{StaticResource Note}" Text="서버를 멈춰야 업데이트할 수 있습니다"
+                                           Visibility="{Binding IsServerRunning, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="업데이트" />
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="서버 버전" />
+                                            <DockPanel Grid.Column="1">
+                                                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="지금 확인" Command="{Binding CheckUpdateCommand}"
+                                                        ToolTip="스팀에 새 서버 버전이 나왔는지 확인합니다. 새 버전이면 업데이트할지 묻습니다." />
+                                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="{Binding BuildStatusText}" />
+                                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding UpdateAvailable}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                    <Setter Property="Text" Value="스팀에서 최신 버전 확인 중…" />
+                                                                    <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="자동 업데이트" />
+                                            <CheckBox Grid.Column="1" Style="{StaticResource Toggle}" IsChecked="{Binding AutoUpdateOnLaunch}">
+                                                <TextBlock Text="프로그램을 켤 때마다 새 버전을 확인하고, 있으면 자동으로 업데이트합니다" Foreground="{StaticResource MutedBrush}" />
+                                            </CheckBox>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="RSM 업데이트" />
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="이 프로그램" />
+                                            <DockPanel Grid.Column="1">
+                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                    <Button Margin="8,0,0,0" Content="지금 확인" Command="{Binding CheckAppUpdateCommand}"
+                                                            ToolTip="GitHub에 새 RSM이 올라왔는지 확인합니다. 있으면 설치할지 묻습니다." />
+                                                    <Button Margin="8,0,0,0" Style="{StaticResource Ghost}" Content="릴리스 페이지" Command="{Binding OpenReleasesCommand}" />
+                                                </StackPanel>
+                                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding AppUpdateStatusText}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding AppUpdateAvailable}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="자동 확인" />
+                                            <CheckBox Grid.Column="1" Style="{StaticResource Toggle}" IsChecked="{Binding AutoUpdateApp}">
+                                                <TextBlock Text="프로그램을 켤 때 새 RSM이 있는지 확인하고, 있으면 설치할지 묻습니다" Foreground="{StaticResource MutedBrush}" />
+                                            </CheckBox>
+                                        </Grid>
+                                    </Border>
+                                    <Border>
+                                        <Border.Style>
+                                            <Style TargetType="Border" BasedOn="{StaticResource Row}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasBakedRepository}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="GitHub 저장소" ToolTip="build.bat으로 직접 만든 RSM.exe에만 필요합니다. GitHub 릴리스에서 받은 RSM.exe에는 이미 들어 있습니다." />
+                                            <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Tag="아이디/RSM 또는 github.com 링크"
+                                                     Text="{Binding UpdateRepository, UpdateSourceTrigger=LostFocus}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Style="{StaticResource SectionTitle}" Margin="0" Text="열어야 할 포트" />
+                                <TextBlock Style="{StaticResource Note}" Margin="10,0,0,0" Text="모두 UDP" />
+                            </StackPanel>
+                            <UniformGrid Columns="3">
+                                <Border Margin="0,0,10,0" Padding="14,12" CornerRadius="8" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="게임" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                                        <TextBlock Text="{Binding BindPort}" FontFamily="{StaticResource MonoFont}" FontSize="19" FontWeight="SemiBold" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Margin="0,0,10,0" Padding="14,12" CornerRadius="8" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="서버 목록 (A2S)" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                                        <TextBlock Text="{Binding A2sPort}" FontFamily="{StaticResource MonoFont}" FontSize="19" FontWeight="SemiBold" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Padding="14,12" CornerRadius="8" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Opacity" Value="0.5" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RconEnabled}" Value="True">
+                                                    <Setter Property="Opacity" Value="1" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel>
+                                        <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="RCON (꺼짐)" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding RconEnabled}" Value="True">
+                                                            <Setter Property="Text" Value="RCON" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding RconPort}" FontFamily="{StaticResource MonoFont}" FontSize="19" FontWeight="SemiBold" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                            <DockPanel Margin="0,12,0,0">
+                                <Button DockPanel.Dock="Left" Command="{Binding AddFirewallRuleCommand}" ToolTip="관리자 권한으로 Windows 방화벽에 위 UDP 포트 허용 규칙을 추가합니다.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Margin="0,0,8,0" />
+                                        <TextBlock Text="Windows 방화벽 열기" />
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock Style="{StaticResource Note}" Margin="14,0,0,0"
+                                           Text="공유기를 쓰면 공유기 관리 페이지에서도 같은 포트를 이 PC로 포트포워딩하세요. 서버 목록에 안 보이면 대부분 이 문제입니다." />
+                            </DockPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 서버 설정 -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding IsChecked, ElementName=NavSettings, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Margin="36,4,36,20">
+                            <TextBlock Style="{StaticResource H1}" Text="서버 설정" />
+                            <TextBlock Style="{StaticResource Lede}" Text="서버 목록에 보이는 이름과 접속 규칙, 플레이할 시나리오를 정합니다." />
+
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="서버 이름" />
+                                            <TextBox Grid.Column="1" MaxLength="100" Tag="서버 목록에 보일 이름"
+                                                     Text="{Binding ServerName, UpdateSourceTrigger=PropertyChanged}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="시나리오" />
+                                            <DockPanel Grid.Column="1">
+                                                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="워크숍 시나리오 찾기" Command="{Binding ListScenariosCommand}"
+                                                        ToolTip="설치된 서버로 시나리오 목록을 뽑아 워크숍 시나리오까지 목록에 추가합니다. 1~2분 걸릴 수 있습니다." />
+                                                <ComboBox ItemsSource="{Binding Scenarios}" DisplayMemberPath="DisplayName" SelectedItem="{Binding SelectedScenario}" />
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource Key}" Text="시나리오 ID" />
+                                                <TextBlock Style="{StaticResource KeyHint}" Text="목록에 없으면 붙여넣기" />
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Text="{Binding ScenarioId, UpdateSourceTrigger=PropertyChanged}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="최대 인원" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <TextBox Width="110" Text="{Binding MaxPlayers, UpdateSourceTrigger=PropertyChanged}" />
+                                                <TextBlock Style="{StaticResource Note}" Margin="12,0,0,0" Text="1~256명" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="28" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="접속과 관리자" />
+                                    <Border Style="{StaticResource Rows}">
+                                        <StackPanel>
+                                            <Border Style="{StaticResource Row}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="116" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Style="{StaticResource Key}" Text="접속 비밀번호" />
+                                                    <TextBox Grid.Column="1" Tag="비우면 누구나 접속" Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}" />
+                                                </Grid>
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="116" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Style="{StaticResource Key}" Text="관리자 비밀번호" />
+                                                    <TextBox Grid.Column="1" Tag="채팅에서 #login 비밀번호" Text="{Binding AdminPassword, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="게임 채팅에서 #login 비밀번호 로 관리자가 됩니다. 공백 없이 입력하세요." />
+                                                </Grid>
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="116" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Style="{StaticResource Key}" Text="관리자 SteamID" Margin="0,8,0,0" />
+                                                        <TextBlock Style="{StaticResource KeyHint}" Text="한 줄에 하나" />
+                                                    </StackPanel>
+                                                    <TextBox Grid.Column="1" Style="{StaticResource MultiBox}" Height="72" Tag="76561198…"
+                                                             Text="{Binding AdminsText, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="SteamID64(17자리 숫자) 또는 IdentityId. 여기 있는 사람은 비밀번호 없이 관리자가 됩니다." />
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="게임 규칙" />
+                                    <Border Style="{StaticResource Rows}">
+                                        <StackPanel>
+                                            <Border Style="{StaticResource Row}">
+                                                <CheckBox Style="{StaticResource Toggle}" Content="서버 목록에 표시" IsChecked="{Binding Visible}" />
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <CheckBox Style="{StaticResource Toggle}" Content="콘솔(Xbox 등) 크로스플레이" IsChecked="{Binding CrossPlatform}" />
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <CheckBox Style="{StaticResource Toggle}" Content="3인칭 끄기" IsChecked="{Binding DisableThirdPerson}" />
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <CheckBox Style="{StaticResource Toggle}" Content="BattlEye 안티치트" IsChecked="{Binding BattlEye}" />
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <CheckBox Style="{StaticResource Toggle}" Content="다른 진영에 무전 송신 허용" IsChecked="{Binding VonCanTransmitCrossFaction}" />
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding FastValidation}"
+                                                          ToolTip="접속할 때 모드 파일 검사를 빠르게 합니다. 보통 켜 둡니다.">
+                                                    <TextBlock><Run Text="빠른 파일 검증" /><Run Text="  fastValidation" Foreground="{StaticResource FaintBrush}" FontSize="12" /></TextBlock>
+                                                </CheckBox>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="네트워크" />
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="게임 포트" />
+                                            <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Text="{Binding BindPort, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Grid.Column="3" Style="{StaticResource Key}" Text="A2S 포트" ToolTip="스팀 서버 목록이 서버 정보를 묻는 포트" />
+                                            <TextBox Grid.Column="4" Width="140" HorizontalAlignment="Left" Style="{StaticResource MonoBox}" Text="{Binding A2sPort, UpdateSourceTrigger=PropertyChanged}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource Key}" Text="공개 포트" />
+                                                <TextBlock Style="{StaticResource KeyHint}" Text="보통 게임 포트와 같게" />
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Text="{Binding PublicPort, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Grid.Column="3" Style="{StaticResource Key}" Text="공개 IP" />
+                                            <TextBox Grid.Column="4" Style="{StaticResource MonoBox}" Tag="비우면 자동으로 찾습니다"
+                                                     Text="{Binding PublicAddress, UpdateSourceTrigger=PropertyChanged}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="원격 관리 (RCON)" />
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding RconEnabled}">
+                                            <TextBlock><Run Text="RCON 켜기" /><Run Text="  BattleMetrics 같은 도구로 밖에서 서버를 관리합니다" Foreground="{StaticResource FaintBrush}" FontSize="12.5" /></TextBlock>
+                                        </CheckBox>
+                                    </Border>
+                                    <Border Style="{StaticResource Row}" IsEnabled="{Binding RconEnabled}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource Key}" Text="RCON 포트" />
+                                            <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Text="{Binding RconPort, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Grid.Column="3" Style="{StaticResource Key}" Text="비밀번호 / 권한" />
+                                            <DockPanel Grid.Column="4">
+                                                <ComboBox DockPanel.Dock="Right" Width="120" Margin="8,0,0,0" ItemsSource="{Binding RconPermissions}" SelectedItem="{Binding RconPermission}"
+                                                          ToolTip="admin: 모든 명령 / monitor: 보기만" />
+                                                <TextBox Tag="공백 없이" Text="{Binding RconPassword, UpdateSourceTrigger=PropertyChanged}" />
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="시야 거리" />
+                            <Border Style="{StaticResource Rows}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Row}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="168" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource Key}" Text="최대 시야" />
+                                                <TextBlock Style="{StaticResource KeyHint}" Text="500~10000 m" />
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Text="{Binding ServerMaxViewDistance, UpdateSourceTrigger=PropertyChanged}" />
+                                            <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource Key}" Text="네트워크 시야" />
+                                                <TextBlock Style="{StaticResource KeyHint}" Text="500~5000 m" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="4" Orientation="Horizontal">
+                                                <TextBox Width="140" Style="{StaticResource MonoBox}" Text="{Binding NetworkViewDistance, UpdateSourceTrigger=PropertyChanged}" />
+                                                <TextBlock Style="{StaticResource Note}" Margin="12,0,0,0" Text="높을수록 서버 부하가 커집니다" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 서버 현황 -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding IsChecked, ElementName=NavMonitor, Converter={StaticResource BoolToVis}}"
+                                  DataContext="{Binding Monitor}">
+                        <StackPanel Margin="36,4,24,20">
+                            <TextBlock Style="{StaticResource H1}" Text="서버 현황" />
+                            <TextBlock Style="{StaticResource Lede}" Margin="0,0,12,18"
+                                       Text="2초마다 새로 고칩니다. 그래프는 최근 5분입니다. CPU·메모리 큰 숫자는 서버 프로그램 기준이고, 네트워크는 이 PC 전체 기준입니다." />
+
+                            <UniformGrid Columns="2">
+                                <Border Margin="0,0,12,12" Padding="18,16" CornerRadius="10" Background="{StaticResource StateCardBrush}"
+                                        BorderBrush="{StaticResource StateCardLineBrush}" BorderThickness="1">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="46" />
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE716;" FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,0,8,0" />
+                                            <TextBlock Text="접속 인원" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding PlayersText}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding PlayersSub}" TextTrimming="CharacterEllipsis" />
+                                        <Grid Grid.Row="3" Margin="0,10,0,0">
+                                            <Path Stretch="Fill" Fill="#2286C56F"
+                                                  Data="{Binding PlayerHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
+                                            <Path Stretch="Fill" Stroke="{StaticResource RunBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                                  Data="{Binding PlayerHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Border Margin="0,0,12,12" Padding="18,16" CornerRadius="10" Background="{StaticResource StateCardBrush}"
+                                        BorderBrush="{StaticResource StateCardLineBrush}" BorderThickness="1">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="46" />
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE945;" FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,0,8,0" />
+                                            <TextBlock Text="CPU (서버)" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding ServerCpuText}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding SystemCpuText}" TextTrimming="CharacterEllipsis" />
+                                        <Grid Grid.Row="3" Margin="0,10,0,0">
+                                            <Path Stretch="Fill" Fill="#22E3A33B"
+                                                  Data="{Binding CpuHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
+                                            <Path Stretch="Fill" Stroke="{StaticResource AmberBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                                  Data="{Binding CpuHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Border Margin="0,0,12,12" Padding="18,16" CornerRadius="10" Background="{StaticResource StateCardBrush}"
+                                        BorderBrush="{StaticResource StateCardLineBrush}" BorderThickness="1">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="46" />
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE7B8;" FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,0,8,0" />
+                                            <TextBlock Text="메모리 (서버)" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding ServerRamText}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding SystemRamText}" TextTrimming="CharacterEllipsis" />
+                                        <Grid Grid.Row="3" Margin="0,10,0,0">
+                                            <Path Stretch="Fill" Fill="#22E3A33B"
+                                                  Data="{Binding RamHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
+                                            <Path Stretch="Fill" Stroke="{StaticResource AmberBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                                  Data="{Binding RamHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Border Margin="0,0,12,12" Padding="18,16" CornerRadius="10" Background="{StaticResource StateCardBrush}"
+                                        BorderBrush="{StaticResource StateCardLineBrush}" BorderThickness="1">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="46" />
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE839;" FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,0,8,0" />
+                                            <TextBlock Text="네트워크 (이 PC 전체)" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding NetDownText}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding NetUpText}" TextTrimming="CharacterEllipsis" />
+                                        <Grid Grid.Row="3" Margin="0,10,0,0">
+                                            <Path Stretch="Fill" Fill="#229EC3C9"
+                                                  Data="{Binding NetHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
+                                            <Path Stretch="Fill" Stroke="#9EC3C9" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                                  Data="{Binding NetHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </UniformGrid>
+
+                            <Grid Margin="0,14,12,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="28" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="접속 중인 플레이어" />
+                                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
+                                        <ItemsControl ItemsSource="{Binding Players}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Style="{StaticResource Row}">
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding TimeText}" Foreground="{StaticResource FaintBrush}" FontSize="12.5" VerticalAlignment="Center"
+                                                                       ToolTip="접속한 지 지난 시간" />
+                                                            <Border DockPanel.Dock="Right" Margin="0,0,12,0" Padding="7,1" CornerRadius="4" VerticalAlignment="Center"
+                                                                    Background="{StaticResource AmberTintBrush}" BorderBrush="{StaticResource Line2Brush}" BorderThickness="1"
+                                                                    Visibility="{Binding HasFaction, Converter={StaticResource BoolToVis}}" ToolTip="고른 진영">
+                                                                <TextBlock Text="{Binding Faction}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                        </DockPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+                                    <TextBlock Margin="0,10,0,0" Foreground="{StaticResource FaintBrush}" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Setter Property="Text" Value="접속한 플레이어가 없습니다." />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Players.Count}" Value="0">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsServerRunning}" Value="False">
+                                                        <Setter Property="Text" Value="서버가 꺼져 있습니다." />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="서버 정보" />
+                                    <Border Style="{StaticResource Rows}">
+                                        <StackPanel>
+                                            <Border Style="{StaticResource Row}">
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left" Width="110" Style="{StaticResource Key}" Text="서버 이름" />
+                                                    <TextBlock Text="{Binding ServerNameText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left" Width="110" Style="{StaticResource Key}" Text="맵" />
+                                                    <TextBlock Text="{Binding MapText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left" Width="110" Style="{StaticResource Key}" Text="가동 시간" />
+                                                    <TextBlock Text="{Binding UptimeText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left" Width="110" Style="{StaticResource Key}" Text="서버 FPS" />
+                                                    <TextBlock Text="{Binding FpsText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Border>
+                                            <Border Style="{StaticResource Row}">
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left" Width="110" Style="{StaticResource Key}" Text="스레드" />
+                                                    <TextBlock Text="{Binding ThreadsText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,-14,0,0"
+                                               Text="서버 FPS는 '설정 파일' 화면의 추가 실행 인자에 -logStats 10000 을 넣으면 나옵니다. 인원과 서버 이름은 A2S 포트로 서버에 직접 물어봅니다." />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- players who could not get in / got thrown out, with a message for them -->
+                            <DockPanel Margin="0,26,12,10">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Content="목록 비우기" Click="OnClearConnectionIssues" />
+                                <TextBlock Style="{StaticResource SectionTitle}" Margin="0" VerticalAlignment="Center" Text="접속 문제" />
+                                <TextBlock Style="{StaticResource Note}" Margin="12,0,0,0"
+                                           Text="입장하다 실패하거나 튕긴 플레이어입니다. 원인과, 그 플레이어에게 그대로 보낼 수 있는 안내문을 보여줍니다." />
+                            </DockPanel>
+                            <TextBlock Margin="0,0,12,0" Foreground="{StaticResource FaintBrush}" Text="아직 접속 문제가 없습니다.">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ConnectionIssueCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ItemsControl Margin="0,0,12,0" ItemsSource="{Binding ConnectionIssues}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,10" Padding="16,14" CornerRadius="10" Background="{StaticResource StateCardBrush}"
+                                                BorderBrush="{StaticResource StateCardLineBrush}" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="20" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <!-- left: what happened (for the admin) -->
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Style="{StaticResource SeverityBadge}" DataContext="{Binding Cause}">
+                                                            <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" />
+                                                        </Border>
+                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Text="{Binding Who}" />
+                                                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding TimeText}" />
+                                                    </StackPanel>
+                                                    <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" LineHeight="20" Text="{Binding Cause.ForAdmin}" />
+                                                    <TextBlock Margin="0,8,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}" TextWrapping="Wrap">
+                                                        <Run Text="{Binding Detail, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                    <TextBlock FontSize="12" Foreground="{StaticResource FaintBrush}" Visibility="{Binding HasAddress, Converter={StaticResource BoolToVis}}">
+                                                        <Run Text="접속 주소 " /><Run Text="{Binding Address, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <!-- right: message for the player -->
+                                                <Border Grid.Column="2" Padding="12,10" CornerRadius="8" Background="{StaticResource InputBrush}" BorderBrush="{StaticResource Line2Brush}" BorderThickness="1">
+                                                    <DockPanel>
+                                                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                                            <Button DockPanel.Dock="Right" MinHeight="28" FontSize="12.5" Content="안내문 복사" Tag="{Binding PlayerMessage}" Click="OnCopyPlayerMessage"
+                                                                    ToolTip="디스코드·카톡에 붙여 넣어 그 플레이어에게 보내세요" />
+                                                            <TextBlock Text="플레이어에게 보낼 안내" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AmberBrush}" />
+                                                        </DockPanel>
+                                                        <TextBlock TextWrapping="Wrap" LineHeight="20" FontSize="13" Text="{Binding PlayerMessage}" />
+                                                    </DockPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 모드 -->
+                    <Grid Margin="36,4,36,16" Visibility="{Binding IsChecked, ElementName=NavMods, Converter={StaticResource BoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource H1}" Text="모드" />
+                            <TextBlock Style="{StaticResource Lede}" Text="체크한 모드만 서버에서 활성화됩니다. 체크를 풀면 목록에는 남고 서버에서만 빠지니 언제든 다시 체크하면 됩니다. 모드를 넣으면 필요한 다른 모드도 찾아서 같이 넣을지 물어봅니다." />
+                        </StackPanel>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="30" />
+                                <ColumnDefinition Width="300" />
+                            </Grid.ColumnDefinitions>
+
+                            <DockPanel Grid.Column="0">
+                                <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Margin="0,0,8,8" Command="{Binding CheckDependenciesCommand}"
+                                            ToolTip="목록의 모든 모드를 워크숍에서 확인해 빠진 필요 모드를 찾고, 비어 있는 이름도 채웁니다.">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE71B;" Margin="0,0,8,0" />
+                                            <TextBlock Text="필요 모드 확인" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Margin="0,0,8,8" Content="워크숍에서 보기" Command="{Binding OpenWorkshopCommand}" />
+                                    <Button Margin="0,0,8,8" Content="JSON 복사" Command="{Binding CopyModsJsonCommand}"
+                                            ToolTip="활성 모드를 config.json의 mods 형식으로 클립보드에 복사합니다." />
+                                    <TextBlock Style="{StaticResource Note}" Margin="6,0,0,8" Text="워크숍에서 필요 모드 확인 중…" Foreground="{StaticResource AmberBrush}"
+                                               Visibility="{Binding IsCheckingDependencies, Converter={StaticResource BoolToVis}}" />
+                                </WrapPanel>
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <Button MinHeight="30" FontSize="12.5" Command="{Binding EnableAllModsCommand}" ToolTip="모든 모드를 체크해서 서버에서 활성화합니다. 저장하면 적용됩니다.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE73A;" FontSize="13" Margin="0,0,7,0" />
+                                                <TextBlock Text="모두 활성화" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Margin="8,0,0,0" MinHeight="30" FontSize="12.5" Command="{Binding DisableAllModsCommand}" ToolTip="모든 모드의 체크를 풉니다. 목록에는 남고 서버에서만 빠집니다. 저장하면 적용됩니다.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE739;" FontSize="13" Margin="0,0,7,0" />
+                                                <TextBlock Text="모두 비활성화" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding ModCountText}" VerticalAlignment="Center" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                                </DockPanel>
+                                <Grid>
+                                    <DataGrid ItemsSource="{Binding Mods}" SelectedItem="{Binding SelectedMod}">
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="DataGridRow" BasedOn="{StaticResource GridRow}">
+                                                <Style.Triggers>
+                                                    <!-- the mod's own IsEnabled (switched off), not the row's -->
+                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                                        <Setter Property="Opacity" Value="0.45" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Header="활성" Width="52">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <CheckBox Style="{StaticResource Check}" IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                                                  ToolTip="체크하면 서버에서 활성화, 해제하면 목록에는 남고 서버에서는 빠집니다" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="모드 ID" Width="170" Binding="{Binding ModId}"
+                                                                FontFamily="{StaticResource MonoFont}" EditingElementStyle="{StaticResource GridEditBox}" />
+                                            <DataGridTextColumn Header="이름" Width="*" Binding="{Binding Name}" EditingElementStyle="{StaticResource GridEditBox}" />
+                                            <DataGridTextColumn Header="버전" Width="100" Binding="{Binding Version}" EditingElementStyle="{StaticResource GridEditBox}" />
+                                            <DataGridTemplateColumn Header="받은 파일" Width="150" IsReadOnly="True">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding InstalledText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="서버 PC에 받아 둔 버전과 용량. '안 받음'은 다음에 서버를 켤 때 받습니다.">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsInstalled}" Value="False">
+                                                                            <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="최신" Width="150" IsReadOnly="True">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding LatestText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding LatestText}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding HasUpdate}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Width="44" IsReadOnly="True">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Button Style="{StaticResource GhostDanger}" MinHeight="26" Padding="6,0" HorizontalAlignment="Center"
+                                                                Command="{Binding DataContext.DeleteModCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"
+                                                                ToolTip="완전 삭제: 목록에서 빼고 서버 PC에 받은 파일도 지웁니다 (묻고 나서 지움)">
+                                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" FontSize="13" />
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" Foreground="{StaticResource FaintBrush}"
+                                               Text="아직 모드가 없습니다.&#10;오른쪽에 모드 ID나 워크숍 링크를 넣어 추가하세요.">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Mods.Count}" Value="0">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </DockPanel>
+
+                            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <!-- mod updates -->
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="모드 업데이트" />
+                                    <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding AutoUpdateMods}"
+                                              ToolTip="켜 두면 프로그램을 켤 때와 정해진 간격마다 워크숍에서 새 버전을 확인해 자동으로 적용합니다.">
+                                        <TextBlock Text="자동 업데이트" />
+                                    </CheckBox>
+                                    <Grid Margin="0,10,0,0" IsEnabled="{Binding AutoUpdateMods}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="72" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="8" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Style="{StaticResource Note}" VerticalAlignment="Center" Text="확인" />
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding ModCheckIntervals}" DisplayMemberPath="Label"
+                                                  SelectedValuePath="Value" SelectedValue="{Binding ModCheckMinutes}" />
+                                        <TextBlock Grid.Row="2" Style="{StaticResource Note}" VerticalAlignment="Center" Text="서버 켜짐" />
+                                        <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ModRestartPolicies}" DisplayMemberPath="Label"
+                                                  SelectedValuePath="Value" SelectedValue="{Binding ModRestartPolicy}"
+                                                  ToolTip="서버가 켜져 있는 동안 쓰는 모드에 새 버전이 나오면 어떻게 할지. 서버는 켜질 때만 모드를 받기 때문에 적용하려면 재시작해야 합니다." />
+                                    </Grid>
+                                    <DockPanel Margin="0,12,0,0">
+                                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" MinHeight="30" FontSize="12.5" Content="지금 확인" Command="{Binding CheckModUpdatesCommand}"
+                                                ToolTip="워크숍에서 모든 모드의 최신 버전을 확인합니다. 새 버전이 있으면 적용할지 묻습니다." />
+                                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12.5" Text="{Binding ModUpdateStatusText}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsCheckingMods}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                               Text="버전을 적어 둔 모드는 새 버전으로 바꿔 저장하고, 버전이 빈 모드는 서버가 켜질 때 최신을 받습니다. 서버가 켜져 있으면 위 설정대로 재시작해서 적용합니다." />
+
+                                    <TextBlock Style="{StaticResource SectionTitle}" Margin="0,26,0,10" Text="모드 추가" />
+                                    <TextBox Style="{StaticResource MonoBox}" Tag="모드 ID 또는 워크숍 링크" Text="{Binding NewModId, UpdateSourceTrigger=PropertyChanged}" />
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="추가" Command="{Binding AddModCommand}" />
+                                        <TextBox Tag="메모용 이름 (선택)" Text="{Binding NewModName, UpdateSourceTrigger=PropertyChanged}" />
+                                    </DockPanel>
+
+                                    <TextBlock Style="{StaticResource SectionTitle}" Margin="0,26,0,10" Text="한꺼번에 붙여넣기" />
+                                    <TextBox Style="{StaticResource MultiBox}" Height="140" FontSize="12" AcceptsTab="True"
+                                             Tag="여기에 붙여넣기" Text="{Binding ModImportText, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,8,0,0"
+                                               Text="게임의 모드 매니저 → JSON 탭 내용, 다른 서버의 config.json, ID나 링크 목록 모두 됩니다. 비워 두고 누르면 클립보드에서 가져옵니다." />
+                                    <Button HorizontalAlignment="Right" Margin="0,10,0,0" Content="목록에 넣기" Command="{Binding ImportModsCommand}" />
+
+                                    <TextBlock Style="{StaticResource SectionTitle}" Margin="0,26,0,6" Text="모드 파일" />
+                                    <TextBlock Style="{StaticResource Note}" Text="체크를 풀면 서버에서만 빠지고 받은 파일은 남습니다. 파일까지 지우려면 목록 오른쪽 끝의 휴지통을 누르세요." />
+                                    <TextBlock Margin="0,10,0,0" FontSize="13" Text="{Binding ModFilesText}" />
+                                    <TextBlock Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource MutedBrush}" Text="{Binding OrphanModFilesText}" TextWrapping="Wrap" />
+                                    <UniformGrid Columns="2" Margin="0,10,0,0">
+                                        <Button Margin="0,0,4,0" Command="{Binding CleanOrphanModFilesCommand}"
+                                                ToolTip="모드 목록에 없는데 서버 PC에 남아 있는 모드 파일을 지웁니다. 목록에 있는 모드(체크를 푼 것 포함)는 건드리지 않습니다. 서버가 꺼져 있어야 합니다.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" FontSize="13" Margin="0,0,7,0" />
+                                                <TextBlock Text="남은 파일 정리" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Margin="4,0,0,0" Content="모드 폴더 열기" Command="{Binding OpenAddonsDirCommand}" />
+                                    </UniformGrid>
+
+                                    <TextBlock Style="{StaticResource SectionTitle}" Margin="0,26,0,6" Text="목록 옮기기" />
+                                    <TextBlock Style="{StaticResource Note}" Margin="0,0,0,10"
+                                               Text="모든 모드의 이름·버전·ID·활성 여부를 파일로 저장합니다. 다른 PC나 폴더로 옮길 때 그 파일을 불러오고 서버를 시작하면 모드를 한 번에 다시 받습니다." />
+                                    <UniformGrid Columns="2">
+                                        <Button Margin="0,0,4,0" Command="{Binding ExportModListCommand}" ToolTip="JSON(.json) 또는 텍스트(.txt)로 저장합니다.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE74E;" FontSize="13" Margin="0,0,7,0" />
+                                                <TextBlock Text="목록 저장" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Margin="4,0,0,0" Command="{Binding ImportModListCommand}" ToolTip="'목록 저장'으로 만든 .json/.txt 파일을 불러옵니다.">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE8E5;" FontSize="13" Margin="0,0,7,0" />
+                                                <TextBlock Text="목록 불러오기" />
+                                            </StackPanel>
+                                        </Button>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+
+                    <!-- 워크숍 둘러보기 -->
+                    <Grid Margin="36,4,36,0" Visibility="{Binding IsChecked, ElementName=NavBrowse, Converter={StaticResource BoolToVis}}"
+                          DataContext="{Binding Browser}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource H1}" Text="워크숍" />
+                            <TextBlock Style="{StaticResource Lede}" Margin="0,0,0,18"
+                                       Text="리포저 워크숍의 모드를 둘러보고 바로 서버에 추가합니다. 추가하면 필요한 모드도 찾아서 같이 넣을지 물어봅니다." />
+                        </StackPanel>
+
+                        <!-- search -->
+                        <DockPanel Grid.Row="1" Margin="0,0,0,14">
+                            <Button DockPanel.Dock="Right" Margin="8,0,0,0" Style="{StaticResource Primary}" MinHeight="34" Command="{Binding SearchCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" FontSize="13" Margin="0,0,8,0" />
+                                    <TextBlock Text="검색" />
+                                </StackPanel>
+                            </Button>
+                            <ComboBox DockPanel.Dock="Right" Width="120" Margin="8,0,0,0" ItemsSource="{Binding Sorts}" SelectedItem="{Binding SelectedSort}"
+                                      DisplayMemberPath="Label" ToolTip="정렬" />
+                            <TextBox Tag="모드 이름으로 검색 (비우면 전체)" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding SearchCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
+                        </DockPanel>
+
+                        <!-- categories -->
+                        <StackPanel Grid.Row="2" Margin="0,0,0,8">
+                            <DockPanel Margin="0,0,0,10">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" MinHeight="26" Padding="10,0" FontSize="12.5"
+                                        Content="선택 해제" Command="{Binding ClearCategoriesCommand}" />
+                                <TextBlock Text="카테고리" Style="{StaticResource SectionTitle}" Margin="0" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource Note}" Margin="10,0,0,0"
+                                           Text="고르면 카테고리별로 나눠서 보여줍니다. 아무것도 안 고르면 전체 모드." />
+                            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding Categories}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Style="{StaticResource Chip}" Content="{Binding Label}" IsChecked="{Binding IsChecked}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- results, one section per group -->
+                        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                            <ItemsControl ItemsSource="{Binding Groups}" Margin="0,4,0,16">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,0,0,28">
+                                            <DockPanel Margin="0,0,0,10">
+                                                <TextBlock DockPanel.Dock="Right" Text="불러오는 중…" Foreground="{StaticResource AmberBrush}" FontSize="12.5" VerticalAlignment="Center"
+                                                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
+                                                <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding CountText}" Margin="10,0,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" VerticalAlignment="Center" />
+                                            </DockPanel>
+
+                                            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
+                                                <ItemsControl ItemsSource="{Binding Items}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Style="{StaticResource Row}" Padding="0,10">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="128" />
+                                                                        <ColumnDefinition Width="16" />
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+
+                                                                    <!-- thumbnail -->
+                                                                    <Border Width="128" Height="72" CornerRadius="6" Background="{StaticResource RaisedBrush}">
+                                                                        <Border CornerRadius="6">
+                                                                            <Border.Background>
+                                                                                <ImageBrush ImageSource="{Binding ThumbnailUrl, TargetNullValue={x:Null}}" Stretch="UniformToFill" />
+                                                                            </Border.Background>
+                                                                        </Border>
+                                                                    </Border>
+
+                                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                        <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}" TextTrimming="CharacterEllipsis">
+                                                                            <Run Text="{Binding Author, Mode=OneWay}" /><Run Text="   " /><Run Text="{Binding CategoriesText, Mode=OneWay}" Foreground="{StaticResource MutedBrush}" />
+                                                                        </TextBlock>
+                                                                        <TextBlock Margin="0,4,0,0" Text="{Binding Summary}" FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                                                    </StackPanel>
+
+                                                                    <StackPanel Grid.Column="3" Margin="18,0,18,0" VerticalAlignment="Center" MinWidth="96">
+                                                                        <TextBlock Text="{Binding SizeText}" FontSize="12" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" />
+                                                                        <TextBlock Text="{Binding SubscribersText}" FontSize="12" Foreground="{StaticResource FaintBrush}" HorizontalAlignment="Right" Margin="0,2,0,0" />
+                                                                        <TextBlock Text="{Binding RatingText}" FontSize="12" Foreground="{StaticResource FaintBrush}" HorizontalAlignment="Right" Margin="0,2,0,0" />
+                                                                    </StackPanel>
+
+                                                                    <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                                                                        <Button Command="{Binding AddCommand}" MinWidth="96">
+                                                                            <Button.Style>
+                                                                                <Style TargetType="Button" BasedOn="{StaticResource Primary}">
+                                                                                    <Setter Property="MinHeight" Value="32" />
+                                                                                    <Setter Property="Content" Value="추가" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding IsAdded}" Value="True">
+                                                                                            <Setter Property="Content" Value="✓ 추가됨" />
+                                                                                            <Setter Property="Background" Value="Transparent" />
+                                                                                            <Setter Property="BorderBrush" Value="{StaticResource RunBrush}" />
+                                                                                            <Setter Property="Foreground" Value="{StaticResource RunBrush}" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Button.Style>
+                                                                        </Button>
+                                                                        <Button Style="{StaticResource Ghost}" MinHeight="26" Margin="0,4,0,0" FontSize="12" Content="워크숍에서 보기"
+                                                                                Command="{Binding OpenCommand}" />
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Border>
+
+                                            <TextBlock Margin="0,14,0,0" Foreground="{StaticResource FaintBrush}" Text="찾는 모드가 없습니다. 검색어나 카테고리를 바꿔 보세요."
+                                                       Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}" />
+                                            <TextBlock Margin="0,14,0,0" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding ErrorText}"
+                                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                            <Button Margin="0,14,0,0" HorizontalAlignment="Center" MinWidth="160" Command="{Binding LoadMoreCommand}"
+                                                    Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock><Run Text="{Binding Title, Mode=OneWay}" /><Run Text=" 더 보기" /></TextBlock>
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- 설정 파일 -->
+                    <Grid Margin="36,4,36,16" Visibility="{Binding IsChecked, ElementName=NavFile, Converter={StaticResource BoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" MinHeight="120" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource H1}" Text="설정 파일" />
+                            <TextBlock Style="{StaticResource Lede}" Text="config.json이 저장될 곳과 서버를 띄울 때 쓰는 옵션입니다." />
+                        </StackPanel>
+
+                        <Border Grid.Row="1" Style="{StaticResource Rows}">
+                            <StackPanel>
+                                <Border Style="{StaticResource Row}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="168" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource Key}" Text="config.json" />
+                                        <DockPanel Grid.Column="1">
+                                            <Button DockPanel.Dock="Right" Margin="4,0,0,0" Style="{StaticResource Ghost}" Content="새로 만들기" Command="{Binding NewConfigCommand}"
+                                                    ToolTip="기본값으로 새 설정을 시작합니다." />
+                                            <Button DockPanel.Dock="Right" Margin="4,0,0,0" Style="{StaticResource Ghost}" Content="다른 이름으로" Command="{Binding SaveConfigAsCommand}" />
+                                            <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="열기" Command="{Binding OpenConfigCommand}" />
+                                            <TextBox Text="{Binding ConfigPath, UpdateSourceTrigger=LostFocus}" />
+                                        </DockPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource Row}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="168" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource Key}" Text="로그 폴더" />
+                                        <DockPanel Grid.Column="1">
+                                            <Button DockPanel.Dock="Right" Margin="4,0,0,0" Style="{StaticResource Ghost}" Content="열기" Command="{Binding OpenProfileDirCommand}" />
+                                            <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="찾아보기" Command="{Binding BrowseProfileDirCommand}" />
+                                            <TextBox Text="{Binding ProfileDir, UpdateSourceTrigger=LostFocus}" />
+                                        </DockPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource Row}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="168" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Style="{StaticResource Key}" Text="최대 FPS" />
+                                            <TextBlock Style="{StaticResource KeyHint}" Text="60~120 권장" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <TextBox Width="110" Style="{StaticResource MonoBox}" Text="{Binding MaxFps, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Note}" Margin="12,0,0,0" Text="0이면 서버가 CPU를 있는 대로 씁니다" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource Row}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="168" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource Key}" Text="추가 실행 인자" />
+                                        <TextBox Grid.Column="1" Style="{StaticResource MonoBox}" Tag="예: -logStats 60000"
+                                                 Text="{Binding ExtraArgs, UpdateSourceTrigger=LostFocus}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <DockPanel Grid.Row="2">
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Style="{StaticResource SectionTitle}" Margin="0" Text="저장될 내용" />
+                                <TextBlock Style="{StaticResource Note}" Margin="10,0,0,0" Text="파일에 직접 넣은 항목은 저장해도 남습니다" />
+                            </StackPanel>
+                            <TextBox Style="{StaticResource CodeBox}" Text="{Binding ConfigPreview, Mode=OneWay}" />
+                        </DockPanel>
+                    </Grid>
+                </Grid>
+
+                <GridSplitter x:Name="ConsoleSplitter" Grid.Row="2" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeNS"
+                              ToolTip="끌어서 콘솔 높이 조절" />
+
+                <!--============================================ console -->
+                <Border Grid.Row="3" Margin="28,0,28,14" CornerRadius="9" Background="{StaticResource ConsoleBrush}"
+                        BorderBrush="#2A2F25" BorderThickness="1">
+                    <DockPanel>
+                        <!-- title, status, tools -->
+                        <Border DockPanel.Dock="Top" Height="38" Padding="14,0,6,0">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Padding="8,0" Content="가−" Click="OnConsoleSmaller" ToolTip="글자 작게 (Ctrl+휠)" />
+                                    <TextBlock VerticalAlignment="Center" MinWidth="22" TextAlignment="Center" FontSize="12" Foreground="{StaticResource FaintBrush}" Text="{Binding ConsoleFontSize}" />
+                                    <Button Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Padding="8,0" Content="가+" Click="OnConsoleBigger" ToolTip="글자 크게 (Ctrl+휠)" />
+                                    <Border Width="1" Height="16" Margin="6,0" Background="{StaticResource ConsoleLineBrush}" />
+                                    <Button Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Content="복사" Click="OnCopyLog"
+                                            ToolTip="고른 줄을 복사합니다. 고른 줄이 없으면 지금 보이는 로그 전부를 복사합니다. (Ctrl+C)" />
+                                    <CheckBox Style="{StaticResource Chip}" Margin="4,0,6,0" FontSize="12.5" Content="로그 설명" IsChecked="{Binding ShowLogHelp}"
+                                              ToolTip="줄을 고르면 무슨 뜻인지, 걱정해야 하는지, 뭘 하면 되는지 한국어로 설명합니다. 아무 줄도 고르지 않으면 이번 실행 로그를 진단합니다." />
+                                    <Button x:Name="ExpandButton" Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Content="크게 보기" Click="OnToggleConsoleSize"
+                                            ToolTip="콘솔을 창 전체 크기로 키웁니다" />
+                                    <Button Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Content="로그 폴더" Command="{Binding OpenProfileDirCommand}" />
+                                    <Button Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Content="지우기" Command="{Binding ClearLogCommand}" />
+                                </StackPanel>
+                                <TextBlock Text="콘솔" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="14,0,0,0" FontSize="12.5"
+                                           Foreground="{StaticResource FaintBrush}" TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                        </Border>
+                        <!-- filter + search -->
+                        <Border DockPanel.Dock="Top" Padding="14,0,14,8" BorderBrush="{StaticResource ConsoleLineBrush}" BorderThickness="0,0,0,1">
+                            <DockPanel>
+                                <TextBlock x:Name="LogCountText" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}" />
+                                <TextBox DockPanel.Dock="Right" Width="240" MinHeight="28" FontSize="12.5" Tag="로그에서 찾기 (예: player, error)"
+                                         Text="{Binding LogSearch, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <RadioButton Style="{StaticResource Seg}" GroupName="LogLevel" Content="전체" IsChecked="{Binding LogShowAll}"
+                                                 ToolTip="서버와 프로그램이 출력한 모든 줄" />
+                                    <RadioButton Style="{StaticResource Seg}" GroupName="LogLevel" Content="중요한 것만" IsChecked="{Binding LogShowImportant}"
+                                                 ToolTip="서버의 로딩 메시지와 게임 기본 경고(회색 줄)는 숨기고, 프로그램 메시지와 모드 다운로드·서버 온라인·접속 코드·플레이어 접속·저장·경고·오류만" />
+                                    <RadioButton Style="{StaticResource Seg}" GroupName="LogLevel" Content="경고·오류" IsChecked="{Binding LogShowProblems}"
+                                                 ToolTip="회색으로 흐리게 표시되는 게임 기본 경고(모드 없는 서버에서도 매번 나오는 것)는 빼고 보여줍니다" />
+                                    <RadioButton Style="{StaticResource Seg}" GroupName="LogLevel" Content="오류만" IsChecked="{Binding LogShowErrors}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- explanation panel -->
+                            <Border Grid.Column="1" Width="400" BorderBrush="{StaticResource ConsoleLineBrush}" BorderThickness="1,0,0,0"
+                                    Visibility="{Binding ShowLogHelp, Converter={StaticResource BoolToVis}}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12,14,12">
+                                    <StackPanel>
+                                        <!-- a line is selected -->
+                                        <StackPanel Visibility="{Binding HasSelectedLogLine, Converter={StaticResource BoolToVis}}">
+                                            <DockPanel Margin="0,0,0,10">
+                                                <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" MinHeight="26" FontSize="12" Content="전체 진단 보기" Click="OnLogHelpBack" />
+                                                <TextBlock Text="고른 줄 설명" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource FaintBrush}" />
+                                            </DockPanel>
+                                            <ContentControl Content="{Binding SelectedLogExplanation}" ContentTemplate="{StaticResource ExplanationTemplate}" />
+                                        </StackPanel>
+
+                                        <!-- nothing selected: diagnosis of this run -->
+                                        <StackPanel DataContext="{Binding LogSummary}">
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding DataContext.HasSelectedLogLine, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <DockPanel Margin="0,0,0,10">
+                                                <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" MinHeight="26" FontSize="12" Content="다시 진단"
+                                                        Command="{Binding DataContext.RefreshLogSummaryCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                <TextBlock Text="이번 실행 로그 진단" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource FaintBrush}" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Headline}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding OverallKey}" Value="good">
+                                                                <Setter Property="Foreground" Value="#9DD06F" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding OverallKey}" Value="problem">
+                                                                <Setter Property="Foreground" Value="#EE7B63" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Facts}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <DockPanel Margin="0,2">
+                                                            <TextBlock DockPanel.Dock="Left" Text="✓" Width="18" Foreground="#9DD06F" />
+                                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                                                        </DockPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding Problems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Margin="0,10,0,0" Padding="12,10" CornerRadius="7" Background="#1C201A" BorderBrush="{StaticResource ConsoleLineBrush}" BorderThickness="1">
+                                                            <StackPanel>
+                                                                <ContentControl Content="{Binding Explanation}" ContentTemplate="{StaticResource ExplanationTemplate}" />
+                                                                <TextBlock Margin="0,8,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}">
+                                                                    <Run Text="이번 실행에서 " /><Run Text="{Binding Count, Mode=OneWay}" /><Run Text="번 · 예:" />
+                                                                </TextBlock>
+                                                                <TextBlock Margin="0,2,0,0" FontFamily="{StaticResource MonoFont}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                                                           Text="{Binding Example}" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Margin="0,14,0,0" Style="{StaticResource Note}">
+                                                <Run Text="회색 줄(게임 기본 경고) " /><Run Text="{Binding HarmlessCount, Mode=OneWay}" /><Run Text="개는 모드 없는 서버에서도 매번 나오는 것이라 빼고 진단했습니다. 콘솔에서 줄을 누르면 그 줄만 설명합니다." />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+
+                            <ListBox x:Name="LogList" ItemsSource="{Binding LogLines}" ItemContainerStyle="{StaticResource ConsoleItem}"
+                                     Background="Transparent" BorderThickness="0" Padding="6,6"
+                                     Foreground="{StaticResource ConsoleTextBrush}" FontFamily="{StaticResource MonoFont}" FontSize="{Binding ConsoleFontSize}"
+                                     SelectionMode="Extended"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                     PreviewMouseWheel="OnLogWheel" KeyDown="OnLogKeyDown" SelectionChanged="OnLogSelectionChanged">
+                                <ListBox.Resources>
+                                    <!-- the square where the two scroll bars meet is drawn with this system colour (white by default) -->
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="Transparent" />
+                                </ListBox.Resources>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="{Binding Converter={StaticResource LogBrush}}" />
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <!-- shown when scrolled up: new lines keep arriving without yanking the view -->
+                            <Button x:Name="ToBottomButton" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,22,14"
+                                    Style="{StaticResource Primary}" MinHeight="30" FontSize="12.5" Content="↓ 최신 로그로" Click="OnScrollToBottom" />
+                        </Grid>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

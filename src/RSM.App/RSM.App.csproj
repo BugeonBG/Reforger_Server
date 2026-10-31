@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>RSM</AssemblyName>
+    <RootNamespace>RSM.App</RootNamespace>
+    <Version>0.14.0</Version>
+    <!-- GitHub "owner/repo" the program updates itself from; the release workflow passes
+         -p:UpdateRepository=$(github.repository). Empty for builds made with build.bat. -->
+    <UpdateRepository Condition="'$(UpdateRepository)' == ''"></UpdateRepository>
+    <Product>리포저 서버 관리자</Product>
+    <Description>Arma Reforger 데디케이티드 서버 관리 프로그램</Description>
+    <!-- icon of RSM.exe (Explorer, pinned taskbar, Start menu) -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pretendard (SIL Open Font License 1.1) compiled into the exe -->
+    <Resource Include="Fonts\*.otf" />
+    <!-- icon of the running window (taskbar, Alt+Tab) and the sidebar logo -->
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo-64.png" />
+    <None Include="Fonts\Pretendard-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>UpdateRepository</_Parameter1>
+      <_Parameter2>$(UpdateRepository)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RSM.Core\RSM.Core.csproj" />
+  </ItemGroup>
+
+</Project>
