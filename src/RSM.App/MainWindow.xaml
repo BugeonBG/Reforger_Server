@@ -26,24 +26,24 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Padding" Value="7,2" />
             <Setter Property="HorizontalAlignment" Value="Left" />
-            <Setter Property="Background" Value="#228FA3B8" />
-            <Setter Property="TextElement.Foreground" Value="#9FB2C6" />
+            <Setter Property="Background" Value="{StaticResource InfoTintBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource InfoTextBrush}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SeverityKey}" Value="good">
-                    <Setter Property="Background" Value="#229DD06F" />
-                    <Setter Property="TextElement.Foreground" Value="#9DD06F" />
+                    <Setter Property="Background" Value="{StaticResource GoodTintBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource GoodBrush}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SeverityKey}" Value="harmless">
-                    <Setter Property="Background" Value="#228A8D80" />
-                    <Setter Property="TextElement.Foreground" Value="#A3A698" />
+                    <Setter Property="Background" Value="{StaticResource NoiseTintBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource NoiseTextBrush}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SeverityKey}" Value="caution">
-                    <Setter Property="Background" Value="#22E3B04F" />
-                    <Setter Property="TextElement.Foreground" Value="#E3B04F" />
+                    <Setter Property="Background" Value="{StaticResource WarnTintBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource WarnTextBrush}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SeverityKey}" Value="problem">
-                    <Setter Property="Background" Value="#26EE7B63" />
-                    <Setter Property="TextElement.Foreground" Value="#EE7B63" />
+                    <Setter Property="Background" Value="{StaticResource ErrorTintBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource ErrorTextBrush}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -76,7 +76,7 @@
         <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveConfigCommand}" />
     </Window.InputBindings>
 
-    <Border BorderBrush="#3A4033" BorderThickness="1">
+    <Border BorderBrush="{StaticResource WindowLineBrush}" BorderThickness="1">
         <Border.Style>
             <Style TargetType="Border">
                 <Style.Triggers>
@@ -95,7 +95,7 @@
             </Grid.ColumnDefinitions>
 
             <!--=================================================================== sidebar -->
-            <Border Grid.Column="0" Background="{StaticResource SideBrush}" BorderBrush="#2A2F25" BorderThickness="0,0,1,0">
+            <Border Grid.Column="0" Background="{StaticResource SideBrush}" BorderBrush="{StaticResource SideLineBrush}" BorderThickness="0,0,1,0">
                 <DockPanel>
 
                     <!-- brand (part of the draggable title area) -->
@@ -820,7 +820,7 @@
                                         <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding PlayersText}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding PlayersSub}" TextTrimming="CharacterEllipsis" />
                                         <Grid Grid.Row="3" Margin="0,10,0,0">
-                                            <Path Stretch="Fill" Fill="#2286C56F"
+                                            <Path Stretch="Fill" Fill="{StaticResource RunFillBrush}"
                                                   Data="{Binding PlayerHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
                                             <Path Stretch="Fill" Stroke="{StaticResource RunBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
                                                   Data="{Binding PlayerHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
@@ -843,7 +843,7 @@
                                         <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding ServerCpuText}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding SystemCpuText}" TextTrimming="CharacterEllipsis" />
                                         <Grid Grid.Row="3" Margin="0,10,0,0">
-                                            <Path Stretch="Fill" Fill="#22E3A33B"
+                                            <Path Stretch="Fill" Fill="{StaticResource AmberFillBrush}"
                                                   Data="{Binding CpuHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
                                             <Path Stretch="Fill" Stroke="{StaticResource AmberBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
                                                   Data="{Binding CpuHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
@@ -866,7 +866,7 @@
                                         <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding ServerRamText}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding SystemRamText}" TextTrimming="CharacterEllipsis" />
                                         <Grid Grid.Row="3" Margin="0,10,0,0">
-                                            <Path Stretch="Fill" Fill="#22E3A33B"
+                                            <Path Stretch="Fill" Fill="{StaticResource AmberFillBrush}"
                                                   Data="{Binding RamHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
                                             <Path Stretch="Fill" Stroke="{StaticResource AmberBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
                                                   Data="{Binding RamHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
@@ -889,9 +889,9 @@
                                         <TextBlock Grid.Row="1" Margin="0,6,0,0" FontSize="26" FontWeight="Bold" Text="{Binding NetDownText}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Row="2" Margin="0,2,0,0" FontSize="12.5" Foreground="{StaticResource FaintBrush}" Text="{Binding NetUpText}" TextTrimming="CharacterEllipsis" />
                                         <Grid Grid.Row="3" Margin="0,10,0,0">
-                                            <Path Stretch="Fill" Fill="#229EC3C9"
+                                            <Path Stretch="Fill" Fill="{StaticResource NetFillBrush}"
                                                   Data="{Binding NetHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=area}" />
-                                            <Path Stretch="Fill" Stroke="#9EC3C9" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                            <Path Stretch="Fill" Stroke="{StaticResource NetBrush}" StrokeThickness="1.6" StrokeLineJoin="Round"
                                                   Data="{Binding NetHistory, Converter={StaticResource HistoryGeo}, ConverterParameter=line}" />
                                         </Grid>
                                     </Grid>
@@ -1528,7 +1528,7 @@
 
                 <!--============================================ console -->
                 <Border Grid.Row="3" Margin="28,0,28,14" CornerRadius="9" Background="{StaticResource ConsoleBrush}"
-                        BorderBrush="#2A2F25" BorderThickness="1">
+                        BorderBrush="{StaticResource ConsoleLineBrush}" BorderThickness="1">
                     <DockPanel>
                         <!-- title, status, tools -->
                         <Border DockPanel.Dock="Top" Height="38" Padding="14,0,6,0">
@@ -1611,10 +1611,10 @@
                                                         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding OverallKey}" Value="good">
-                                                                <Setter Property="Foreground" Value="#9DD06F" />
+                                                                <Setter Property="Foreground" Value="{StaticResource GoodBrush}" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding OverallKey}" Value="problem">
-                                                                <Setter Property="Foreground" Value="#EE7B63" />
+                                                                <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -1624,7 +1624,7 @@
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <DockPanel Margin="0,2">
-                                                            <TextBlock DockPanel.Dock="Left" Text="✓" Width="18" Foreground="#9DD06F" />
+                                                            <TextBlock DockPanel.Dock="Left" Text="✓" Width="18" Foreground="{StaticResource GoodBrush}" />
                                                             <TextBlock Text="{Binding}" TextWrapping="Wrap" />
                                                         </DockPanel>
                                                     </DataTemplate>
@@ -1633,7 +1633,7 @@
                                             <ItemsControl Margin="0,6,0,0" ItemsSource="{Binding Problems}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border Margin="0,10,0,0" Padding="12,10" CornerRadius="7" Background="#1C201A" BorderBrush="{StaticResource ConsoleLineBrush}" BorderThickness="1">
+                                                        <Border Margin="0,10,0,0" Padding="12,10" CornerRadius="7" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource ConsoleLineBrush}" BorderThickness="1">
                                                             <StackPanel>
                                                                 <ContentControl Content="{Binding Explanation}" ContentTemplate="{StaticResource ExplanationTemplate}" />
                                                                 <TextBlock Margin="0,8,0,0" FontSize="12" Foreground="{StaticResource FaintBrush}">

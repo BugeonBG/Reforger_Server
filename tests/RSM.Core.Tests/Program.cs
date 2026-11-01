@@ -72,6 +72,7 @@ sealed class Tests
             Run(ConnectionProblems);
             Run(ModFileDeletion);
             Run(ModScenarios);
+            await RunAsync(WorkshopScenarios);
             await RunAsync(SelfUpdate);
             await RunAsync(ConnectionProblemsOnStatusPage);
             await RunAsync(PlayerListOnStatusPage);
@@ -1487,6 +1488,59 @@ sealed class Tests
         return dir;
     }
 
+    private static string ScenariosPage(params (string id, string name)[] scenarios)
+    {
+        var arr = new JsonArray();
+        foreach (var (id, name) in scenarios)
+            arr.Add(new JsonObject { ["name"] = name, ["gameId"] = id, ["playerCount"] = 128, ["gameMode"] = "GameMaster" });
+        var data = new JsonObject { ["props"] = new JsonObject { ["pageProps"] = new JsonObject { ["asset"] = new JsonObject { ["id"] = "x", ["scenarios"] = arr } } } };
+        return $"<html><body><script id=\"__NEXT_DATA__\" type=\"application/json\">{data.ToJsonString()}</script></body></html>";
+    }
+
+    private async Task WorkshopScenarios()
+    {
+        const string zim = "597697D81A1EA202", gmZim = "{9D2D546F1E889561}Missions/GM_Zimnitrita.conf";
+        // parsing: the scenario tab's data (seen 2026-11-01: "Zimnitrita - Game Master", {9D2D546F1E889561}Missions/GM_Zimnitrita.conf)
+        var parsed = WorkshopPage.ParseScenarios(ScenariosPage((gmZim, "Zimnitrita - Game Master")));
+        Check(parsed.Count == 1 && parsed[0].Id == gmZim && parsed[0].DisplayName == "Zimnitrita - Game Master", "scenario tab parsed");
+        // no embedded data: ids in the page text still count
+        var plain = WorkshopPage.ParseScenarios("<div>Scenario ID</div><div>{9D2D546F1E889561}Missions/GM_Zimnitrita.conf</div>");
+        Check(plain.Count == 1 && plain[0].Id == gmZim && plain[0].DisplayName == "GM_Zimnitrita", "plain text fallback");
+        Check(WorkshopPage.ParseScenarios(ScenariosPage()).Count == 0, "mod without scenarios");
+
+        var site = new FakeWorkshop.FakeSite();
+        site.Pages[zim + "/scenarios"] = ScenariosPage((gmZim, "Zimnitrita - Game Master"), ("{9D2D546F1E889562}Missions/Conflict_Zimnitrita.conf", "Zimnitrita - Conflict"));
+        site.Pages[RhsId + "/scenarios"] = ScenariosPage();
+        var root = Path.Combine(_tmp, "wsscen");
+        var store = new AppSettingsStore(Path.Combine(root, "app.json"));
+        store.Save(new AppSettings { SteamCmdDir = Path.Combine(root, "steamcmd"), ServerDir = Path.Combine(root, "server"),
+                                     ConfigPath = Path.Combine(root, "server", "Configs", "server.json"), ProfileDir = Path.Combine(root, "server", "profile") });
+        var vm = new MainViewModel(new FakeUi(), null, store, FakeWorkshop.Client(site));
+        vm.Mods.Add(new ModEntry(RhsId, "RHS - Status Quo"));
+        vm.Mods.Add(new ModEntry(zim, "Zimnitrita"));          // not downloaded yet: the Workshop still knows its scenarios
+        await vm.WaitForScenarioLookupsAsync();
+        await vm.WaitForScenarioLookupsAsync();
+        Check(vm.Scenarios[0].DisplayName == "[Zimnitrita] Zimnitrita - Game Master" && vm.Scenarios[1].Id.Contains("Conflict_Zimnitrita"),
+              "added mod's scenarios at the top: " + string.Join(" | ", vm.Scenarios.Take(3).Select(x => x.DisplayName)));
+        vm.SelectedScenario = vm.Scenarios[0];
+        Check(vm.ScenarioId == gmZim, "selectable");
+        Check(vm.TrySaveConfig(false), "saved");
+
+        // next start, offline: remembered list still offered, saved choice shown by name
+        var offline = new MainViewModel(new FakeUi(), null, store, FakeWorkshop.Client(new FakeWorkshop.FakeSite { Offline = true }));
+        Check(offline.SelectedScenario?.DisplayName == "[Zimnitrita] Zimnitrita - Game Master" && offline.Scenarios.Count(x => x.Id.Contains("Zimnitrita")) == 2,
+              $"from the cache: {offline.SelectedScenario?.DisplayName}");
+        var failed = await offline.RefreshModScenariosAsync(all: true);
+        Check(failed == 2 && offline.Scenarios.Count(x => x.Id.Contains("Zimnitrita")) == 2, "offline refresh keeps what it knew");
+
+        // the button: Workshop answer, no server needed
+        var ui = new FakeUi();
+        var vm3 = new MainViewModel(ui, null, store, FakeWorkshop.Client(site));
+        await vm3.ListScenariosCommand.ExecuteAsync();
+        Check(vm3.StatusText.Contains("모드 시나리오 2개") && !vm3.LogLines.Any(l => l.Contains("-listScenarios")), vm3.StatusText);
+        foreach (var v in new[] { vm, offline, vm3 }) v.Shutdown();
+    }
+
     private void ModScenarios()
     {
         var root = Path.Combine(_tmp, "modscen");
@@ -2021,7 +2075,8 @@ static class FakeWorkshop
                 var listHtml = ListPage(all.Count, all.Skip((page - 1) * 16).Take(16));
                 return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(listHtml) });
             }
-            var id = uri.AbsolutePath.Split('/').Last();
+            var parts = uri.AbsolutePath.Trim('/').Split('/');
+            var id = parts.Length >= 3 && parts[^1] == "scenarios" ? parts[^2] + "/scenarios" : parts.Last();
             var resp = Pages.TryGetValue(id, out var html)
                 ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(html) }
                 : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);

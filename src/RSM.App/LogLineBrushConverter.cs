@@ -11,10 +11,10 @@ namespace RSM.App;
 /// everything else the normal console colour.</summary>
 public sealed class LogLineBrushConverter : IValueConverter
 {
-    private static readonly Brush Error = Frozen("#EE7B63");
-    private static readonly Brush Warning = Frozen("#E3B04F");
-    private static readonly Brush Highlight = Frozen("#9DD06F");
-    private static readonly Brush Noise = Frozen("#6C7064");
+    private static readonly Brush Error = Frozen("#B83A24");
+    private static readonly Brush Warning = Frozen("#95600A");
+    private static readonly Brush Highlight = Frozen("#2F7D25");
+    private static readonly Brush Noise = Frozen("#A4A79A");
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
         LogLine.Classify(value as string ?? "") switch

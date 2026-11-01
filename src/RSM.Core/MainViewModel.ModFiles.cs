@@ -143,10 +143,16 @@ public sealed partial class MainViewModel
     private void SyncModScenarios()
     {
         var wanted = new List<ScenarioInfo>();
-        foreach (var m in Mods.Where(m => m.IsEnabled && m.Installed != null))
-            foreach (var s in m.Installed!.Scenarios)
+        foreach (var m in Mods.Where(m => m.IsEnabled))
+        {
+            // from the Workshop (works before the server has downloaded the mod), plus anything the download's meta file lists
+            var fromWorkshop = _workshopScenarios.TryGetValue(m.ModId, out var ws) ? ws : new List<ScenarioInfo>();
+            var fromMeta = m.Installed?.Scenarios ?? Array.Empty<ScenarioInfo>();
+            var label = m.Name.Length > 0 ? m.Name : m.Installed?.Name ?? m.ModId;
+            foreach (var s in fromWorkshop.Concat(fromMeta))
                 if (wanted.All(w => !string.Equals(w.Id, s.Id, StringComparison.OrdinalIgnoreCase)))
-                    wanted.Add(new ScenarioInfo(s.Id, $"[{(m.Name.Length > 0 ? m.Name : m.Installed.Name)}] {s.DisplayName}"));
+                    wanted.Add(new ScenarioInfo(s.Id, $"[{label}] {s.DisplayName}"));
+        }
 
         // drop the ones no longer offered (keep the selected one so the setting is not silently lost)
         foreach (var gone in Scenarios.Where(s => _modScenarioIds.Contains(s.Id) && wanted.All(w => !string.Equals(w.Id, s.Id, StringComparison.OrdinalIgnoreCase)) && s.Id != ScenarioId).ToList())

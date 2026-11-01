@@ -153,6 +153,7 @@ public sealed partial class MainViewModel : ObservableObject
             AppendLog(migrated);
 
         RefreshInstalled();
+        LoadScenarioCache();
         RefreshInstalledMods();
         StatusText = ServerInstalled ? "준비됨" : "서버가 아직 설치되지 않았습니다. '서버 설치' 화면에서 설치하세요.";
     }
@@ -457,6 +458,8 @@ public sealed partial class MainViewModel : ObservableObject
                 m.PropertyChanged += OnModPropertyChanged;
                 ApplyKnownVersions(m);
                 m.Installed = _installedMods.FirstOrDefault(i => i.Id == m.ModId);
+                if (!_workshopScenarios.ContainsKey(m.ModId))
+                    QueueScenarioLookup();
             }
         base.OnPropertyChanged(nameof(ModsWithUpdates));
         MarkDirty();
@@ -906,6 +909,20 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
         StartModUpdateLoop();
+
+        if (Mods.Any(m => m.IsEnabled))
+        {
+            try
+            {
+                var failed = await RefreshModScenariosAsync(all: true);
+                if (failed > 0)
+                    AppendLog($"모드 {failed}개는 워크숍에서 시나리오를 확인하지 못했습니다 (지난번 목록을 씁니다).");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"모드 시나리오 확인 중 오류: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>SteamCMD sometimes ignores force_install_dir and installs into its own library.
@@ -1042,6 +1059,26 @@ public sealed partial class MainViewModel : ObservableObject
 
     //============================================================== scenarios
     private async Task ListScenariosAsync()
+    {
+        if (Mods.Any(m => m.IsEnabled))
+        {
+            StatusText = "워크숍에서 모드 시나리오를 확인하는 중…";
+            var before = Scenarios.Count;
+            var failed = await RefreshModScenariosAsync(all: true);
+            var modScenarios = _modScenarioIds.Count;
+            if (modScenarios > 0)
+            {
+                AppendLog($"워크숍에서 모드 시나리오 {modScenarios}개를 찾았습니다." + (failed > 0 ? $" (모드 {failed}개는 확인 실패)" : ""));
+                StatusText = $"모드 시나리오 {modScenarios}개 — 시나리오 목록 맨 위에 있습니다";
+                return;
+            }
+            AppendLog(failed > 0 ? "워크숍에 연결할 수 없어 서버로 시나리오 목록을 만듭니다."
+                                 : "워크숍에 모드 시나리오가 없어 서버로 한 번 더 찾아봅니다.");
+        }
+        await ListScenariosWithServerAsync();
+    }
+
+    private async Task ListScenariosWithServerAsync()
     {
         var exe = ServerTools.ServerExe(ServerDir);
         if (!File.Exists(exe))
