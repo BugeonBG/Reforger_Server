@@ -36,6 +36,7 @@ public static partial class LogLine
         "No module info used", "There is not enough of SCR_CatalogSpawnerUserAction", "GM Budget got clamped",
         "Cannot get the size from terrain", "doesn't contain RadioManagerEntity", "does not have any transceiver",
         "JsonApi Array name=\"admins\"",
+        "InputManager: unknown key",
         // -logStats every 10 s
         "frame time (avg",
     };

@@ -365,9 +365,9 @@ public sealed partial class ServerMonitorViewModel : ObservableObject
 
     //============================================================== formatting
     public static string FormatGb(long bytes) =>
-        bytes >= 1024L * 1024 * 1024
-            ? $"{bytes / (1024.0 * 1024 * 1024):0.0} GB"
-            : $"{bytes / (1024.0 * 1024):0} MB";
+        bytes >= 1024L * 1024 * 1024 ? $"{bytes / (1024.0 * 1024 * 1024):0.0} GB"
+        : bytes >= 1024L * 1024 ? $"{bytes / (1024.0 * 1024):0} MB"
+        : $"{Math.Max(1, (bytes + 1023) / 1024)} KB"; // small script-only mods: "0 MB" looked like an empty download
 
     public static string FormatRate(double bytesPerSecond) =>
         bytesPerSecond >= 1024 * 1024 ? $"{bytesPerSecond / (1024 * 1024):0.0} MB/s"

@@ -36,7 +36,14 @@ public static class ServerTools
     public static long? ReadInstalledBuildId(string serverDir, string steamCmdDir, int appId)
     {
         var name = $"appmanifest_{appId}.acf";
-        foreach (var dir in new[] { Path.Combine(serverDir, "steamapps"), Path.Combine(steamCmdDir, "steamapps") })
+        var dirs = new List<string> { Path.Combine(serverDir, "steamapps") };
+        // SteamCMD's own record only describes the copy in its own library; a shared SteamCMD may
+        // remember an old install there that has nothing to do with the chosen server folder
+        var library = Path.Combine(steamCmdDir, "steamapps", "common", SteamFolderName);
+        if (string.Equals(Path.GetFullPath(serverDir).TrimEnd('\\', '/'), Path.GetFullPath(library).TrimEnd('\\', '/'),
+                          OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            dirs.Add(Path.Combine(steamCmdDir, "steamapps"));
+        foreach (var dir in dirs)
         {
             var file = Path.Combine(dir, name);
             if (!File.Exists(file))

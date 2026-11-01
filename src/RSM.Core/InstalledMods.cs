@@ -8,6 +8,9 @@ namespace RSM.Core;
 public sealed record InstalledMod(string Id, string Name, string Version, string Folder, long Bytes)
 {
     public string SizeText => ServerMonitorViewModel.FormatGb(Bytes);
+
+    /// <summary>Scenarios the mod brings (from its meta file), e.g. a map's missions.</summary>
+    public IReadOnlyList<ScenarioInfo> Scenarios { get; init; } = Array.Empty<ScenarioInfo>();
 }
 
 /// <summary>The server's download folder for Workshop mods. The server keeps each mod in
@@ -46,6 +49,7 @@ public static partial class InstalledMods
             var id = m.Groups["id"].Value.ToUpperInvariant();
             var name = folderName[..m.Index];
             var version = "";
+            var scenarios = new List<ScenarioInfo>();
             try
             {
                 var metaPath = Path.Combine(dir, "meta");
@@ -56,15 +60,44 @@ public static partial class InstalledMods
                         name = n;
                     if (meta?["versions"] is JsonArray { Count: > 0 } versions && versions[0]?["version"]?.GetValue<string>() is { } v)
                         version = v;
+                    // the newest version's scenario list; field names vary, so look for any scenario id ("{GUID}Missions/x.conf")
+                    if (meta?["versions"] is JsonArray { Count: > 0 } vs)
+                        CollectScenarios(vs[0], scenarios, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
                 }
             }
             catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException or UnauthorizedAccessException)
             {
                 // unreadable meta: still a mod folder, just without name/version
             }
-            result.Add(new InstalledMod(id, name, version, dir, ServerTools.DirectorySize(dir)));
+            result.Add(new InstalledMod(id, name, version, dir, ServerTools.DirectorySize(dir)) { Scenarios = scenarios });
         }
         return result.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static void CollectScenarios(JsonNode? node, List<ScenarioInfo> into, HashSet<string> seen, int depth = 0)
+    {
+        if (node == null || depth > 12)
+            return;
+        if (node is JsonArray arr)
+        {
+            foreach (var item in arr)
+                CollectScenarios(item, into, seen, depth + 1);
+            return;
+        }
+        if (node is not JsonObject obj)
+            return;
+        foreach (var (_, value) in obj)
+        {
+            if (value is JsonValue v && v.TryGetValue(out string? text) && ScenarioCatalog.ParseListOutput(new[] { text }) is [var sid] && seen.Add(sid))
+            {
+                var title = obj["name"] is JsonValue n && n.TryGetValue(out string? nm) && nm.Trim().Length > 0 ? nm.Trim()
+                          : obj["title"] is JsonValue t && t.TryGetValue(out string? tt) && tt.Trim().Length > 0 ? tt.Trim()
+                          : ScenarioCatalog.NameFromId(sid);
+                into.Add(new ScenarioInfo(sid, title));
+            }
+            else
+                CollectScenarios(value, into, seen, depth + 1);
+        }
     }
 
     /// <summary>Deletes the mod's folder. Refuses anything that is not a "&lt;Name&gt;_&lt;16 hex&gt;" folder

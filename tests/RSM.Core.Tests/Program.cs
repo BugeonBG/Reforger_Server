@@ -71,6 +71,7 @@ sealed class Tests
             Run(LogExplanations);
             Run(ConnectionProblems);
             Run(ModFileDeletion);
+            Run(ModScenarios);
             await RunAsync(SelfUpdate);
             await RunAsync(ConnectionProblemsOnStatusPage);
             await RunAsync(PlayerListOnStatusPage);
@@ -345,6 +346,7 @@ sealed class Tests
               *-listScenarios*)
                 echo "SCRIPT : {ECC61978EDCC2B5A}Missions/23_Campaign.conf"
                 echo "SCRIPT : {ABCDEF0123456789}Missions/Workshop_Coop.conf"
+                echo "DEFAULT : Entered online game state."
                 sleep 30 ;;
               *)
                 echo "server args: $*"
@@ -440,11 +442,12 @@ sealed class Tests
         Check(vm2.TrySaveConfig(false), "save 2");
         Check(ServerConfigJson.Load(configPath)["operating"]?["playerSaveTime"]?.GetValue<int>() == 99, "hand-added key kept");
 
-        // scenario list from the (fake) server: stops itself ~5 s after output goes quiet
+        // scenario list from the (fake) server, started with the config so mods load; stops once the server goes online
         var before = vm.Scenarios.Count;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await vm.ListScenariosCommand.ExecuteAsync();
         Check(sw.Elapsed < TimeSpan.FromSeconds(20), "list scenarios did not wait for the 30 s sleep");
+        Check(vm.LogLines.Any(l => l.Contains("-config ") && l.Contains("-listScenarios")), "listed with the config (mods loaded)");
         Check(vm.Scenarios.Count == before + 1 && vm.Scenarios.Last().DisplayName == "[서버] Workshop_Coop", "workshop scenario added");
 
         // start / stop
@@ -1049,7 +1052,7 @@ sealed class Tests
             	"TargetBuildID"		"24870635"
             }
             """);
-        Check(ServerTools.ReadInstalledBuildId(root, steam, 1874900) == 24870635, "installed build from manifest");
+        Check(ServerTools.ReadInstalledBuildId(root, steam, 1874900) == null, "SteamCMD's record is not about another server folder (shared SteamCMD)");
         Check(ServerTools.ReadInstalledBuildId(real, steam, 1874900) == 24870635, "same after switching folder");
         Check(ServerTools.ReadInstalledBuildId(root, steam, 1890870) == null, "experimental not installed");
 
@@ -1331,6 +1334,13 @@ sealed class Tests
         var json = E("BACKEND   (E): JSON is not valid: #/game/maxPlayers must be <= 128");
         Check(json.Severity == LogSeverity.Problem && json.Title.Contains("config.json"), "bad config");
         Check(E("BACKEND   (E): Addon 1337C0DE5DABBEEF download failed").Title == "모드 다운로드 실패", "download failed");
+        // the user's new server (2026-10-31): a fragment fails and is retried — not a failure
+        foreach (var l in new[] { "[08:24:36] DEFAULT   (E): error bad headers: date", "[08:24:36] DEFAULT   (E): CURL error:",
+                                  "[08:24:36] BACKEND   (E): Fragmentizer: Download error (fragment 19/21) uHttpCode: 0 eApiCode: 0x90",
+                                  "[08:24:36] BACKEND   (E): Fragmentizer: Retrying download from fragment 19/21" })
+            Check(E(l) is { Severity: LogSeverity.Caution } x && x.Title.Contains("자동으로 다시 받음"), "fragment retry: " + l);
+        var input = "[08:39:20]   INPUT     (E): InputManager: unknown key 'gamepad0:up'";
+        Check(E(input).Severity == LogSeverity.Harmless && LogLine.Classify(input) == LogKind.Noise, "gamepad keys on a dedicated server: harmless");
         Check(E("RPL          : ServerImpl event: authentication timeout (identity=0x00000004)").Severity == LogSeverity.Caution, "auth timeout");
 
         // unknown lines: generic, by level and module
@@ -1477,6 +1487,53 @@ sealed class Tests
         return dir;
     }
 
+    private void ModScenarios()
+    {
+        var root = Path.Combine(_tmp, "modscen");
+        var profile = Path.Combine(root, "server", "profile");
+        var addons = Path.Combine(profile, "addons");
+        var map = MakeAddon(addons, "Zimnitrita_597697D81A1EA202", "597697D81A1EA202", "Zimnitrita", "1.2.3", 2000);
+        // a map mod's meta with its scenarios (field names as the Workshop uses them; RSM only relies on the id shape)
+        File.WriteAllText(Path.Combine(map, "meta"), """
+            {"meta":{"id":"597697D81A1EA202","name":"Zimnitrita","versions":[{"version":"1.2.3","scenarios":[
+              {"gameId":"{1A2B3C4D5E6F7081}Missions/Zimnitrita_Conflict.conf","name":"Conflict - Zimnitrita","playerCount":64},
+              {"gameId":"{1A2B3C4D5E6F7082}Missions/Zimnitrita_GM.conf","name":"Game Master - Zimnitrita"}]},
+              {"version":"1.2.2","scenarios":[{"gameId":"{9999999999999999}Missions/Old.conf","name":"old"}]}]}}
+            """);
+        MakeAddon(addons, "RHS-StatusQuo_595F2BF2F44836FB", RhsId, "RHS - Status Quo", "0.16.5237", 1000); // no scenarios
+
+        var found = InstalledMods.Scan(addons).Single(m => m.Name == "Zimnitrita").Scenarios;
+        Check(found.Select(x => x.Id).SequenceEqual(new[] { "{1A2B3C4D5E6F7081}Missions/Zimnitrita_Conflict.conf", "{1A2B3C4D5E6F7082}Missions/Zimnitrita_GM.conf" }) &&
+              found[0].DisplayName == "Conflict - Zimnitrita", "scenarios of the newest version: " + string.Join(", ", found.Select(x => x.DisplayName)));
+
+        var config = Path.Combine(root, "server", "Configs", "server.json");
+        var store = new AppSettingsStore(Path.Combine(root, "app.json"));
+        store.Save(new AppSettings { SteamCmdDir = Path.Combine(root, "steamcmd"), ServerDir = Path.Combine(root, "server"), ConfigPath = config, ProfileDir = profile });
+        // the old server's config already pointed at the map's conflict scenario
+        var cfg = ServerConfigJson.CreateDefault();
+        var settings = new ServerSettings { ServerName = "x", ScenarioId = "{1A2B3C4D5E6F7081}Missions/Zimnitrita_Conflict.conf" };
+        settings.Mods.Add(new ModEntry("597697D81A1EA202", "Zimnitrita"));
+        settings.Mods.Add(new ModEntry(RhsId, "RHS - Status Quo"));
+        ServerConfigJson.Write(settings, cfg);
+        ServerConfigJson.Save(config, cfg);
+
+        var vm = new MainViewModel(new FakeUi(), null, store, FakeWorkshop.Client(new()));
+        Check(vm.Scenarios[0].DisplayName == "[Zimnitrita] Conflict - Zimnitrita" && vm.Scenarios[1].DisplayName == "[Zimnitrita] Game Master - Zimnitrita",
+              "mod scenarios first, named: " + vm.Scenarios[0].DisplayName);
+        Check(vm.SelectedScenario?.DisplayName == "[Zimnitrita] Conflict - Zimnitrita" && !vm.IsDirty, $"saved choice shown by name: {vm.SelectedScenario?.DisplayName}");
+        Check(vm.Scenarios.Count(x => x.Id.Contains("Zimnitrita_Conflict")) == 1 && !vm.Scenarios.Any(x => x.Id.Contains("Old.conf")), "no duplicates, old version ignored");
+
+        // switching the map off takes its scenarios away (except the one still chosen)
+        vm.Mods[0].IsEnabled = false;
+        Check(!vm.Scenarios.Any(x => x.Id.Contains("Zimnitrita_GM")) && vm.Scenarios.Any(x => x.Id.Contains("Zimnitrita_Conflict")), "off → offered no more, chosen kept");
+        vm.Mods[0].IsEnabled = true;
+        Check(vm.Scenarios.Any(x => x.Id.Contains("Zimnitrita_GM")), "on again → back");
+        // picking one sets the config value
+        vm.SelectedScenario = vm.Scenarios.First(x => x.Id.Contains("Zimnitrita_GM"));
+        Check(vm.ScenarioId == "{1A2B3C4D5E6F7082}Missions/Zimnitrita_GM.conf" && vm.IsDirty, "picked");
+        vm.Shutdown();
+    }
+
     private void ModFileDeletion()
     {
         var root = Path.Combine(_tmp, "modfiles");
@@ -1495,6 +1552,7 @@ sealed class Tests
         var sqInfo = found.Single(f => f.Id == RhsId);
         Check(sqInfo.Name == "RHS - Status Quo" && sqInfo.Version == "0.16.5237" && sqInfo.Bytes > 3000, $"meta read: {sqInfo.Name} {sqInfo.Version} {sqInfo.Bytes}");
         Check(InstalledMods.Scan(Path.Combine(root, "nope")).Count == 0, "no folder → empty");
+        Check(ServerMonitorViewModel.FormatGb(180_000) == "176 KB" && ServerMonitorViewModel.FormatGb(5 * 1024 * 1024) == "5 MB" && ServerMonitorViewModel.FormatGb(10) == "1 KB", "small mods show KB, not 0 MB");
 
         // the delete guard: never anything outside "<addons>\Name_<16 hex>"
         var threw = false;
@@ -1586,7 +1644,7 @@ sealed class Tests
         var exe = Path.Combine(dir, "RSM.exe");
         File.WriteAllText(exe, "old version");
         var reports = new List<double>();
-        var got = await U("0.14.0").DownloadAsync(rel!, exe, new Progress<double>(reports.Add));
+        var got = await U("0.14.0").DownloadAsync(rel!, exe, new Progress<double>(p => { lock (reports) reports.Add(p); }));
         Check(got == exe + ".new" && File.ReadAllBytes(got).SequenceEqual(gh.Exe), "downloaded");
         gh.ShaOverride = new string('0', 64);
         var bad = false;

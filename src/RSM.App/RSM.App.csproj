@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>RSM</AssemblyName>
     <RootNamespace>RSM.App</RootNamespace>
-    <Version>0.14.0</Version>
+    <Version>0.15.0</Version>
     <!-- GitHub "owner/repo" the program updates itself from; the release workflow passes
          -p:UpdateRepository=$(github.repository). Empty for builds made with build.bat. -->
     <UpdateRepository Condition="'$(UpdateRepository)' == ''"></UpdateRepository>

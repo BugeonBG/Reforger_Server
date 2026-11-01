@@ -43,6 +43,7 @@ public sealed partial class MainViewModel
         }
         foreach (var m in Mods)
             m.Installed = _installedMods.FirstOrDefault(i => string.Equals(i.Id, m.ModId, StringComparison.OrdinalIgnoreCase));
+        SyncModScenarios();
         base.OnPropertyChanged(nameof(ModFilesText));
         base.OnPropertyChanged(nameof(OrphanModFilesText));
         base.OnPropertyChanged(nameof(OrphanModFiles));
@@ -132,6 +133,43 @@ public sealed partial class MainViewModel
         }
         StatusText = $"목록에 없는 모드 파일 {deleted}개를 지웠습니다 ({total})";
         RefreshInstalledMods();
+    }
+
+    //---------------------------------------------------------------- scenarios that come with mods
+    private readonly HashSet<string> _modScenarioIds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Puts the scenarios of switched-on, downloaded mods at the top of the scenario list
+    /// ("[Zimnitrita] Conflict"), and takes away those of mods that were switched off or deleted.</summary>
+    private void SyncModScenarios()
+    {
+        var wanted = new List<ScenarioInfo>();
+        foreach (var m in Mods.Where(m => m.IsEnabled && m.Installed != null))
+            foreach (var s in m.Installed!.Scenarios)
+                if (wanted.All(w => !string.Equals(w.Id, s.Id, StringComparison.OrdinalIgnoreCase)))
+                    wanted.Add(new ScenarioInfo(s.Id, $"[{(m.Name.Length > 0 ? m.Name : m.Installed.Name)}] {s.DisplayName}"));
+
+        // drop the ones no longer offered (keep the selected one so the setting is not silently lost)
+        foreach (var gone in Scenarios.Where(s => _modScenarioIds.Contains(s.Id) && wanted.All(w => !string.Equals(w.Id, s.Id, StringComparison.OrdinalIgnoreCase)) && s.Id != ScenarioId).ToList())
+            Scenarios.Remove(gone);
+        _modScenarioIds.Clear();
+
+        var at = 0;
+        foreach (var w in wanted)
+        {
+            _modScenarioIds.Add(w.Id);
+            var existing = Scenarios.FirstOrDefault(s => string.Equals(s.Id, w.Id, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                if (ScenarioCatalog.Official.Contains(existing))
+                    continue;
+                Scenarios.Remove(existing); // a "[설정 파일] …" / "[서버] …" stand-in: replace with the named one
+            }
+            Scenarios.Insert(Math.Min(at++, Scenarios.Count), w);
+        }
+
+        // keep the selection pointing at the entry in the list
+        if (Scenarios.FirstOrDefault(s => s.Id == ScenarioId) is { } sel && !ReferenceEquals(sel, SelectedScenario))
+            SetSelectedScenarioQuietly(sel);
     }
 
     // like the update bump: save right away unless other edits are waiting

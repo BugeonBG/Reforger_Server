@@ -150,10 +150,10 @@ public sealed class AppUpdater
         if (release.ShaUrl != null)
         {
             var expected = (await _http.GetStringAsync(release.ShaUrl, ct)).Trim().Split(' ', '\t', '\r', '\n')[0].ToLowerInvariant();
-        string hash;
-               // close the file before a possible delete: Windows will not delete a file that is still open
-               await using (var f = File.OpenRead(target))
-                   hash = Convert.ToHexString(await SHA256.HashDataAsync(f, ct)).ToLowerInvariant();
+            string hash;
+            // close the file before a possible delete: Windows will not delete a file that is still open
+            await using (var f = File.OpenRead(target))
+                hash = Convert.ToHexString(await SHA256.HashDataAsync(f, ct)).ToLowerInvariant();
             if (hash != expected)
                 throw Fail(target, "받은 파일의 체크섬(SHA-256)이 릴리스와 다릅니다. 다운로드가 깨졌을 수 있습니다.");
         }

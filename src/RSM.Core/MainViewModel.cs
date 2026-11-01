@@ -309,6 +309,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private ScenarioInfo? _selectedScenario;
 
+    /// <summary>Points the picker at <paramref name="s"/> without touching the setting (same id).</summary>
+    private void SetSelectedScenarioQuietly(ScenarioInfo s) => Set(ref _selectedScenario, s, nameof(SelectedScenario));
+
     public ScenarioInfo? SelectedScenario
     {
         get => _selectedScenario;
@@ -491,6 +494,7 @@ public sealed partial class MainViewModel : ObservableObject
         MarkDirty();
         if (e.PropertyName == nameof(ModEntry.IsEnabled))
         {
+            SyncModScenarios();
             RaiseModCounts();
             RefreshCommands();
         }
@@ -928,8 +932,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void ShowInstalledBuild()
     {
+        if (!ServerInstalled)
+        {
+            BuildStatusText = "";
+            return;
+        }
         var installed = ServerTools.ReadInstalledBuildId(ServerDir, SteamCmdDir, ServerTools.AppId(UseExperimental));
-        BuildStatusText = installed is { } b ? $"설치된 빌드 {b}" : (ServerInstalled ? "설치된 빌드를 알 수 없음" : "");
+        BuildStatusText = installed is { } b ? $"설치된 빌드 {b}" : "설치된 빌드를 알 수 없음";
     }
 
     /// <summary>Asks Steam (through SteamCMD) for the newest build and compares it with the installed one.
@@ -1040,9 +1049,17 @@ public sealed partial class MainViewModel : ObservableObject
             _ui.ShowError("서버가 설치되어 있지 않습니다. '서버 설치' 화면에서 먼저 설치하세요.");
             return;
         }
+        if (IsServerRunning)
+        {
+            _ui.ShowError("서버가 켜져 있는 동안에는 시나리오를 찾을 수 없습니다. 서버를 멈춘 뒤 다시 눌러 주세요.");
+            return;
+        }
+        // with the config the server loads the mods, so their scenarios are listed too
+        if (!TrySaveConfig(showSuccess: false))
+            return;
 
         IsBusy = true;
-        StatusText = "시나리오 목록을 불러오는 중... (최대 2분)";
+        StatusText = "모드를 불러와 시나리오 목록을 만드는 중... (모드가 많으면 몇 분 걸립니다)";
         var lines = new List<string>();
         var lastOutput = DateTime.UtcNow;
 
@@ -1059,7 +1076,8 @@ public sealed partial class MainViewModel : ObservableObject
             };
 
             Directory.CreateDirectory(ProfileDir);
-            var args = "-listScenarios -profile " + ServerTools.Quote(Path.GetFullPath(ProfileDir));
+            var args = "-config " + ServerTools.Quote(Path.GetFullPath(ConfigPath)) +
+                       " -profile " + ServerTools.Quote(Path.GetFullPath(ProfileDir)) + " -listScenarios";
             AppendLog($"> {Path.GetFileName(exe)} {args}");
             runner.Start(exe, args, ServerDir);
 
@@ -1075,7 +1093,11 @@ public sealed partial class MainViewModel : ObservableObject
                     found = ScenarioCatalog.ParseListOutput(lines).Count;
                     last = lastOutput;
                 }
-                if ((found > 0 && DateTime.UtcNow - last > TimeSpan.FromSeconds(5)) || DateTime.UtcNow - started > TimeSpan.FromMinutes(2))
+                bool online;
+                lock (lines)
+                    online = lines.Any(l => l.Contains("Entered online game state", StringComparison.Ordinal));
+                // done once the server has gone on to start the game, or the list stopped growing for a while
+                if (online || (found > 0 && DateTime.UtcNow - last > TimeSpan.FromSeconds(20)) || DateTime.UtcNow - started > TimeSpan.FromMinutes(6))
                     break;
             }
             runner.Kill();
