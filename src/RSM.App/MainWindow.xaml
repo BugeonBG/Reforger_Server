@@ -179,6 +179,83 @@
                                 </StackPanel>
                             </Grid>
 
+                            <!-- mod downloads while the server starts: which, how far, and whether anything is moving -->
+                            <Border Margin="0,-4,0,14" Padding="12,10,12,11" CornerRadius="8" BorderThickness="1"
+                                    Visibility="{Binding ModDownloads.IsVisible, Converter={StaticResource BoolToVis}}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{StaticResource WarnTintBrush}" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource AmberFillBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ModDownloads.IsStalled}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource ErrorTintBrush}" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource ErrorTintBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ModDownloads.IsDone}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource GoodTintBrush}" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource GoodTintBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding ModDownloads.SpeedText}" FontSize="12" FontFamily="{StaticResource MonoFont}"
+                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding ModDownloads.Headline}" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource WarnTextBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ModDownloads.IsDone}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource GoodBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding ModDownloads.CurrentName}" Margin="0,5,0,0" FontSize="12.5" TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding ModDownloads.CurrentName}"
+                                               Visibility="{Binding ModDownloads.HasCurrent, Converter={StaticResource BoolToVis}}" />
+                                    <!-- bar: fill scaled to the current mod's progress -->
+                                    <Grid Height="5" Margin="0,7,0,0" ClipToBounds="True">
+                                        <Border CornerRadius="2.5" Background="{StaticResource TrackOffBrush}" />
+                                        <Border CornerRadius="2.5" HorizontalAlignment="Stretch" RenderTransformOrigin="0,0.5">
+                                            <Border.RenderTransform>
+                                                <ScaleTransform ScaleX="{Binding ModDownloads.Fraction}" />
+                                            </Border.RenderTransform>
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{StaticResource AmberBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ModDownloads.IsDone}" Value="True">
+                                                            <Setter Property="Background" Value="{StaticResource RunBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="{Binding ModDownloads.DetailText}" Margin="0,6,0,0" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding ModDownloads.ActivityText}" Margin="0,3,0,0" FontSize="11.5" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ModDownloads.IsStalled}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Margin="0,6,0,0" HorizontalAlignment="Left" Style="{StaticResource Ghost}" MinHeight="24" FontSize="11.5" Padding="0"
+                                            Content="모드 화면에서 보기 →" Click="OnShowDownloadingMods" />
+                                </StackPanel>
+                            </Border>
+
                             <Button Command="{Binding StartServerCommand}" ToolTip="설정을 저장한 뒤 서버를 켭니다.">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource BigStart}">
@@ -1102,6 +1179,104 @@
                                     </StackPanel>
                                     <TextBlock Text="{Binding ModCountText}" VerticalAlignment="Center" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
                                 </DockPanel>
+                                <!-- search: name or ID, and which mods (downloaded / not / downloading) -->
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <ComboBox DockPanel.Dock="Right" Width="130" Margin="8,0,0,0" MinHeight="32"
+                                              ItemsSource="{Binding ModListFilters}" DisplayMemberPath="Label"
+                                              SelectedValuePath="Value" SelectedValue="{Binding ModListFilter}"
+                                              ToolTip="받은 모드: 서버 PC에 파일이 있는 모드 / 안 받은 모드: 다음에 서버를 켤 때 받을 모드 / 받는 중: 지금 서버가 받고 있는 모드" />
+                                    <TextBlock DockPanel.Dock="Right" Margin="10,0,2,0" VerticalAlignment="Center" FontSize="12.5"
+                                               Foreground="{StaticResource WarnTextBrush}" Text="{Binding ModFilterResultText}"
+                                               Visibility="{Binding IsModFilterActive, Converter={StaticResource BoolToVis}}" />
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" MinHeight="30" FontSize="12.5" Margin="6,0,0,0" Content="검색 지우기"
+                                            Command="{Binding ClearModSearchCommand}"
+                                            Visibility="{Binding IsModFilterActive, Converter={StaticResource BoolToVis}}" />
+                                    <TextBox x:Name="ModSearchBox" MinHeight="32" FontSize="13" Tag="모드 검색 — 이름이나 ID (예: RHS, WCS, 595F2B)"
+                                             Text="{Binding ModSearchText, UpdateSourceTrigger=PropertyChanged, Delay=150}"
+                                             ToolTip="이름이나 ID 일부로 찾습니다. 여러 단어를 쓰면 모두 들어간 모드만 보여요. (Ctrl+F)" />
+                                </DockPanel>
+
+                                <!-- the server is downloading mods right now -->
+                                <Border DockPanel.Dock="Top" Margin="0,0,0,10" Padding="14,10,14,11" CornerRadius="8" BorderThickness="1"
+                                        Visibility="{Binding ModDownloads.IsVisible, Converter={StaticResource BoolToVis}}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{StaticResource WarnTintBrush}" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AmberFillBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ModDownloads.IsStalled}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource ErrorTintBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{StaticResource ErrorTintBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ModDownloads.IsDone}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource GoodTintBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{StaticResource GoodTintBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource WarnTextBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ModDownloads.IsDone}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource GoodBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                                <Run Text="{Binding ModDownloads.Headline, Mode=OneWay}" /><Run Text="  " /><Run
+                                                     Text="{Binding ModDownloads.CurrentName, Mode=OneWay}" Foreground="{StaticResource TextBrush}" />
+                                            </TextBlock>
+                                            <Grid Height="6" Margin="0,8,0,0" ClipToBounds="True">
+                                                <Border CornerRadius="3" Background="{StaticResource TrackOffBrush}" />
+                                                <Border CornerRadius="3" RenderTransformOrigin="0,0.5">
+                                                    <Border.RenderTransform>
+                                                        <ScaleTransform ScaleX="{Binding ModDownloads.Fraction}" />
+                                                    </Border.RenderTransform>
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{StaticResource AmberBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ModDownloads.IsDone}" Value="True">
+                                                                    <Setter Property="Background" Value="{StaticResource RunBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" TextWrapping="Wrap">
+                                                <Run Text="{Binding ModDownloads.DetailText, Mode=OneWay}" Foreground="{StaticResource MutedBrush}" /><Run Text="   " /><Run
+                                                     Text="{Binding ModDownloads.ActivityText, Mode=OneWay}">
+                                                    <Run.Style>
+                                                        <Style TargetType="Run">
+                                                            <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ModDownloads.IsStalled}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Run.Style>
+                                                </Run>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="18,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock HorizontalAlignment="Right" FontSize="15" FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}"
+                                                       Text="{Binding ModDownloads.SpeedText}" />
+                                            <Button Margin="0,6,0,0" Style="{StaticResource Ghost}" MinHeight="26" FontSize="12" Content="받는 모드만 보기"
+                                                    Click="OnShowDownloadingMods" ToolTip="표에서 지금 받고 있거나 받을 차례인 모드만 보여줍니다." />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
                                 <Grid>
                                     <DataGrid ItemsSource="{Binding Mods}" SelectedItem="{Binding SelectedMod}">
                                         <DataGrid.RowStyle>
@@ -1130,19 +1305,28 @@
                                             <DataGridTemplateColumn Header="받은 파일" Width="150" IsReadOnly="True">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <TextBlock Text="{Binding InstalledText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                                   ToolTip="서버 PC에 받아 둔 버전과 용량. '안 받음'은 다음에 서버를 켤 때 받습니다.">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsInstalled}" Value="False">
-                                                                            <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
+                                                        <Grid>
+                                                            <TextBlock Text="{Binding DownloadText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                       FontWeight="SemiBold" Foreground="{StaticResource WarnTextBrush}"
+                                                                       Visibility="{Binding HasDownloadText, Converter={StaticResource BoolToVis}}"
+                                                                       ToolTip="서버가 지금 이 모드를 받고 있습니다." />
+                                                            <TextBlock Text="{Binding InstalledText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="서버 PC에 받아 둔 버전과 용량. '안 받음'은 다음에 서버를 켤 때 받습니다.">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsInstalled}" Value="False">
+                                                                                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding HasDownloadText}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Grid>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>
@@ -1548,8 +1732,33 @@
                                     <Button Style="{StaticResource Ghost}" MinHeight="28" FontSize="12.5" Content="지우기" Command="{Binding ClearLogCommand}" />
                                 </StackPanel>
                                 <TextBlock Text="콘솔" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="14,0,0,0" FontSize="12.5"
-                                           Foreground="{StaticResource FaintBrush}" TextTrimming="CharacterEllipsis" />
+                                <!-- latest status: a pill that lights up for a moment whenever it changes -->
+                                <Border x:Name="StatusPill" Margin="14,0,12,0" Padding="10,4,12,4" CornerRadius="13" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                        Background="{StaticResource AmberFillBrush}" BorderBrush="{StaticResource AmberFillBrush}" BorderThickness="1">
+                                    <Border.Triggers>
+                                        <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetName="StatusFlash" Storyboard.TargetProperty="Opacity"
+                                                                     From="1" To="0" Duration="0:0:2.5" BeginTime="0:0:0">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <QuadraticEase EasingMode="EaseIn" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </Border.Triggers>
+                                    <Grid>
+                                        <Border x:Name="StatusFlash" Margin="-10,-4,-12,-4" CornerRadius="13" Background="{StaticResource AmberBrush}" Opacity="0" IsHitTestVisible="False" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="7" Height="7" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{StaticResource AmberBrush}" />
+                                            <TextBlock Text="{Binding StatusText, NotifyOnTargetUpdated=True}" VerticalAlignment="Center" FontSize="13.5" FontWeight="SemiBold"
+                                                       Foreground="{Binding StatusText, Converter={StaticResource LogBrush}, FallbackValue={StaticResource TextBrush}, TargetNullValue={StaticResource TextBrush}}"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusText}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
                             </DockPanel>
                         </Border>
                         <!-- filter + search -->

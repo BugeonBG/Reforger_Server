@@ -9,6 +9,7 @@ public sealed partial class MainViewModel
 {
     private readonly Dictionary<string, string> _latestKnown = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _runningVersions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _olderOnWorkshopNoted = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _backgroundCts = new();
     private Task? _runningVersionsTask;
     private Task? _loop;
@@ -91,8 +92,12 @@ public sealed partial class MainViewModel
         foreach (var m in Mods)
             ApplyKnownVersions(m);
 
-        // 1. pinned versions that fell behind → newest
-        var pinned = Mods.Where(m => m.Version.Length > 0 && m.LatestVersion.Length > 0 && m.Version != m.LatestVersion).ToList();
+        // 1. pinned versions that fell behind → newest. Never downwards: the Workshop page can show an older
+        //    number than the one in the list (e.g. right after a game update), and "updating" to it breaks mods.
+        var pinned = Mods.Where(m => m.Version.Length > 0 && ModVersion.IsNewer(m.LatestVersion, m.Version)).ToList();
+        foreach (var m in Mods.Where(m => m.Version.Length > 0 && ModVersion.IsNewer(m.Version, m.LatestVersion)))
+            if (_olderOnWorkshopNoted.Add(m.ModId + "@" + m.LatestVersion))
+                AppendLog($"참고: {Label(m)} — 워크숍 페이지의 버전({m.LatestVersion})이 목록의 버전({m.Version})보다 낮아서 그대로 둡니다.");
         var bumped = 0;
         if (pinned.Count > 0)
         {
@@ -147,7 +152,7 @@ public sealed partial class MainViewModel
 
     private List<ModEntry> RunningModsBehind() =>
         Mods.Where(m => m.IsEnabled && m.LatestVersion.Length > 0 &&
-                        _runningVersions.TryGetValue(m.ModId, out var running) && running.Length > 0 && running != m.LatestVersion)
+                        _runningVersions.TryGetValue(m.ModId, out var running) && ModVersion.IsNewer(m.LatestVersion, running))
             .ToList();
 
     private async Task HandleRunningServerBehindAsync(List<ModEntry> behind, bool automatic)

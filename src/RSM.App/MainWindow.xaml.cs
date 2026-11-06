@@ -48,6 +48,28 @@ public partial class MainWindow : Window
                 _logScroll.ScrollChanged += OnLogScrolled;
         };
 
+        // mods page search/filter: a view over the same list, nothing is removed from it
+        var modView = CollectionViewSource.GetDefaultView(_vm.Mods);
+        modView.Filter = o => o is not ModEntry m || _vm.ModMatchesFilter(m);
+        _vm.ModFilterChanged += () =>
+        {
+            // a row being edited (or the new-row) must not be pulled away under the cursor
+            if (modView is IEditableCollectionView { IsAddingNew: true } or IEditableCollectionView { IsEditingItem: true })
+                return;
+            modView.Refresh();
+        };
+
+        // Ctrl+F on the mods page: jump to its search box (the console has its own)
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && NavMods.IsChecked == true)
+            {
+                ModSearchBox.Focus();
+                ModSearchBox.SelectAll();
+                e.Handled = true;
+            }
+        };
+
         _vm.LogLines.CollectionChanged += OnLogChanged;
         // the "서버 현황" numbers refresh every 2 s; start once the window (and its dispatcher) is up
         Loaded += async (_, _) =>
@@ -281,6 +303,14 @@ public partial class MainWindow : Window
     }
 
     // the workshop page loads the first time it is opened
+    /// <summary>From the download box: open the mods page showing only the mods being downloaded.</summary>
+    private void OnShowDownloadingMods(object sender, RoutedEventArgs e)
+    {
+        NavMods.IsChecked = true;
+        _vm.ModSearchText = "";
+        _vm.ModListFilter = ModListFilter.Downloading;
+    }
+
     private void OnBrowseOpened(object sender, RoutedEventArgs e) => _ = _vm.Browser.EnsureLoadedAsync();
 
     private void OnClosing(object? sender, CancelEventArgs e)

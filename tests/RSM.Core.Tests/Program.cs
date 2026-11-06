@@ -77,6 +77,11 @@ sealed class Tests
             await RunAsync(ConnectionProblemsOnStatusPage);
             await RunAsync(PlayerListOnStatusPage);
             await RunAsync(ModUpdates);
+            await RunAsync(ModUpdatesNeverDowngrade);
+            Run(ModVersionCompare);
+            Run(ModSearchAndFilter);
+            Run(ModDownloadTracking);
+            Run(LogFileTailFollowsRunLog);
             if (!OperatingSystem.IsWindows())
             {
                 await RunAsync(ProcessRunnerCapturesOutput);
@@ -1794,6 +1799,149 @@ sealed class Tests
         vm.Mods.Add(new ModEntry(CbaId, "Floating Mod", ""));
         Check(vm.TrySaveConfig(false), "saved");
         return (vm, ui, site, config);
+    }
+
+    private void ModSearchAndFilter()
+    {
+        var store = new AppSettingsStore(Path.Combine(_tmp, "modsearch.json"));
+        var vm = new MainViewModel(new FakeUi(), null, store);
+        var rhs = new ModEntry("595F2BF2F44836FB", "RHS - Status Quo", "0.17.5281");
+        var wcs = new ModEntry("64610AFB74AA9842", "WCS_Core", "9.0.1");
+        var ace = new ModEntry("65AD7D0D9941A380", "ACE Core Dev", "");
+        vm.Mods.Add(rhs); vm.Mods.Add(wcs); vm.Mods.Add(ace);
+        // as found on disk (adding to the list looks the files up, and this test has none)
+        rhs.Installed = new InstalledMod("595F2BF2F44836FB", "RHS - Status Quo", "0.17.5281", "x", 1);
+        ace.Installed = new InstalledMod("65AD7D0D9941A380", "ACE Core Dev", "1.5.41", "y", 1);
+        var raised = 0;
+        vm.ModFilterChanged += () => raised++;
+
+        Check(!vm.IsModFilterActive && vm.Mods.All(vm.ModMatchesFilter) && vm.ModFilterResultText == "", "no filter: everything");
+        vm.ModSearchText = "rhs";
+        Check(vm.ModMatchesFilter(rhs) && !vm.ModMatchesFilter(wcs) && raised == 1 && vm.ModFilterResultText == "1개 표시 중", $"name, any case: {vm.ModFilterResultText}");
+        vm.ModSearchText = "64610a";
+        Check(vm.ModMatchesFilter(wcs) && !vm.ModMatchesFilter(rhs), "part of the ID");
+        vm.ModSearchText = "core dev";
+        Check(vm.ModMatchesFilter(ace) && !vm.ModMatchesFilter(wcs), "all words must match");
+        vm.ModSearchText = "";
+        vm.ModListFilter = ModListFilter.Downloaded;
+        Check(vm.ModMatchesFilter(rhs) && vm.ModMatchesFilter(ace) && !vm.ModMatchesFilter(wcs), "downloaded only");
+        vm.ModListFilter = ModListFilter.NotDownloaded;
+        Check(!vm.ModMatchesFilter(rhs) && vm.ModMatchesFilter(wcs), "not downloaded only");
+        vm.ModListFilter = ModListFilter.Downloading;
+        wcs.DownloadText = "받는 중 12%";
+        Check(vm.ModMatchesFilter(wcs) && !vm.ModMatchesFilter(rhs), "downloading only");
+        vm.ModSearchText = "zzz";
+        Check(vm.ModFilterResultText == "맞는 모드 없음", vm.ModFilterResultText);
+        vm.ClearModSearchCommand.Execute(null);
+        Check(!vm.IsModFilterActive && vm.ModListFilter == ModListFilter.All, "cleared");
+    }
+
+    private void ModVersionCompare()
+    {
+        Check(ModVersion.IsNewer("9.0.1", "8.4.1") && ModVersion.IsNewer("1.0.33", "1.0.32") && ModVersion.IsNewer("1.10.0", "1.9.9"), "newer");
+        Check(!ModVersion.IsNewer("8.4.1", "9.0.1") && !ModVersion.IsNewer("1.7.3", "1.9.0") && !ModVersion.IsNewer("1.0", "1.0.0"), "not newer");
+        Check(ModVersion.Compare("0.16.5237", "0.16.5237") == 0 && !ModVersion.IsNewer("", "1.0") && !ModVersion.IsNewer("1.0", ""), "equal / empty");
+        var m = new ModEntry("64610AFB74AA9842", "WCS_Core", "9.0.1") { LatestVersion = "8.4.1" };
+        Check(!m.HasUpdate, "an older number on the Workshop is not an update");
+        m.LatestVersion = "9.0.2";
+        Check(m.HasUpdate, "a higher one is");
+    }
+
+    // the Workshop page showed older numbers than the pinned ones right after a game update;
+    // "updating" WCS_Core 9.0.1 → 8.4.1 broke script compilation on the new game version
+    private async Task ModUpdatesNeverDowngrade()
+    {
+        var (vm, ui, site, config) = ModUpdateSetup("moddown");
+        site.Pages[RhsId] = FakeWorkshop.Page(RhsId, "RHS - Status Quo", "0.9.0"); // older than the pinned 0.10.4805
+        await vm.CheckModUpdatesAsync(automatic: true);
+        var rhs = vm.Mods.First(m => m.ModId == RhsId);
+        Check(rhs.Version == "0.10.4805" && !rhs.HasUpdate, $"kept the pinned version: {rhs.Version}");
+        Check(ServerConfigJson.Read(ServerConfigJson.Load(config)).Mods.First(m => m.ModId == RhsId).Version == "0.10.4805", "file keeps it too");
+        Check(!vm.LogLines.Any(l => l.Contains("모드 업데이트: RHS")), "no downgrade logged as an update");
+        Check(vm.LogLines.Any(l => l.Contains("워크숍 페이지의 버전(0.9.0)이 목록의 버전(0.10.4805)보다 낮아서")), "explained once");
+        var notes = vm.LogLines.Count(l => l.Contains("워크숍 페이지의 버전(0.9.0)"));
+        await vm.CheckModUpdatesAsync(automatic: true);
+        Check(vm.LogLines.Count(l => l.Contains("워크숍 페이지의 버전(0.9.0)")) == notes, "not repeated every check");
+        Check(ui.Confirms.Count == 0, "nothing asked");
+    }
+
+    private void ModDownloadTracking()
+    {
+        var t0 = new DateTime(2026, 11, 6, 8, 0, 0, DateTimeKind.Utc);
+        var d = new ModDownloadProgress();
+        d.Begin(new[] { ("61110CC4F1FF9C8A", "Placeables for GM byHeine"), ("64610AFB74AA9842", "WCS_Core") }, t0);
+        Check(d.IsVisible && d.Headline.Contains("준비 중") && d.Headline.Contains("2개"), $"waiting: {d.Headline}");
+        Check(d.RowText("64610AFB74AA9842") == "받기 대기 중" && d.RowText("595F2BF2F44836FB") == "", "rows: queued / not involved");
+
+        d.OnLine("17:16:20.100 BACKEND      : Addon Download started 61110CC4F1FF9C8A - Placeables for GM byHeine", t0.AddSeconds(5));
+        d.OnLine("17:16:20.100 BACKEND      : Downloading 61110CC4F1FF9C8A version 3.1.5", t0.AddSeconds(5));
+        d.OnLine("17:16:31.000  BACKEND      : Placeables for GM byHeine: [=======>____________] 35% 209/586 MB", t0.AddSeconds(16));
+        d.OnLine("17:16:31.000  BACKEND      : Download speed 21415.36 KB/s", t0.AddSeconds(16));
+        Check(d.Headline == "모드 받는 중 1/2" && d.CurrentName == "Placeables for GM byHeine", $"first: {d.Headline} {d.CurrentName}");
+        Check(Math.Abs(d.Fraction - 0.35) < 0.001 && d.DetailText == "35% · 209 MB / 586 MB" && d.SpeedText == "20.9 MB/s", $"{d.DetailText} {d.SpeedText}");
+        Check(d.RowText("61110CC4F1FF9C8A") == "받는 중 35%", d.RowText("61110CC4F1FF9C8A"));
+
+        // a mod nobody expected (dependency) is added as it starts; the previous one is done
+        d.OnLine("BACKEND      : Addon Download started 6ACCAEA5F1CBEBC4 - MGM_System_Pack", t0.AddSeconds(40));
+        Check(d.Headline == "모드 받는 중 2/3" && d.RowText("61110CC4F1FF9C8A") == "방금 받음", $"second: {d.Headline}");
+
+        // silence: the box says how long, then that it may be stuck; disk growth counts as life
+        d.Tick(t0.AddSeconds(70));
+        Check(d.ActivityText.Contains("30초째") && !d.IsStalled, d.ActivityText);
+        d.OnDiskSample(1000L * 1024 * 1024, t0.AddSeconds(70));
+        d.OnDiskSample(1100L * 1024 * 1024, t0.AddSeconds(80));
+        Check(d.ActivityText.StartsWith("모드 폴더에 저장 중") && d.ActivityText.Contains("10.0 MB/s"), d.ActivityText);
+        d.Tick(t0.AddSeconds(80 + 125));
+        Check(d.IsStalled && d.ActivityText.Contains("멈췄을 수 있어요"), d.ActivityText);
+        d.OnNetworkRate(5_000_000, t0.AddSeconds(206));
+        d.Tick(t0.AddSeconds(206));
+        Check(!d.IsStalled && d.ActivityText.StartsWith("PC가 받는 중"), $"network traffic is life: {d.ActivityText}");
+
+        d.OnLine("BACKEND      : Required addons are ready to use.", t0.AddSeconds(210));
+        Check(d.IsVisible && d.IsDone && d.Headline == "모드 준비 완료" && d.DetailText.StartsWith("2개 받음"), $"done: {d.DetailText}");
+        Check(d.RowText("6ACCAEA5F1CBEBC4") == "방금 받음" && d.RowText("64610AFB74AA9842") == "", "rows after ready");
+        d.Tick(t0.AddSeconds(210 + 31));
+        Check(!d.IsVisible && d.IsFinished, "summary goes away");
+
+        // nothing to download: nothing shown at all
+        var quiet = new ModDownloadProgress();
+        quiet.Begin(Array.Empty<(string, string)>(), t0);
+        quiet.OnLine("BACKEND      : Required addons are ready to use.", t0.AddSeconds(3));
+        Check(!quiet.IsVisible && quiet.IsFinished, "no box when nothing is fetched");
+
+        // server stopped mid-download: box goes away
+        var stopped = new ModDownloadProgress();
+        stopped.Begin(new[] { ("64610AFB74AA9842", "WCS_Core") }, t0);
+        stopped.OnLine("BACKEND      : Addon Download started 64610AFB74AA9842 - WCS_Core", t0.AddSeconds(1));
+        stopped.End(t0.AddSeconds(2));
+        Check(!stopped.IsVisible && stopped.RowText("64610AFB74AA9842") == "", "stopped");
+    }
+
+    private void LogFileTailFollowsRunLog()
+    {
+        var logs = Path.Combine(_tmp, "tail", "logs");
+        var started = new DateTime(2026, 11, 6, 17, 16, 15);
+        Directory.CreateDirectory(Path.Combine(logs, "logs_2026-11-06_17-12-58"));
+        File.WriteAllText(Path.Combine(logs, "logs_2026-11-06_17-12-58", "console.log"), "old run\n");
+        var tail = new LogFileTail();
+        Check(tail.ReadNew(logs, started).Count == 0 && tail.Path == null, "an earlier run's log is not ours");
+
+        var dir = Path.Combine(logs, "logs_2026-11-06_17-16-16");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "console.log");
+        using (var w = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes("17:16:16.001 ENGINE : 시작\r\n17:17:07.000 BACKEND : Addon Download started 61110CC4F1FF9C8A - Placeables\r\n17:17:08 BACK");
+            w.Write(bytes);
+            w.Flush();
+            var first = tail.ReadNew(logs, started);
+            Check(first.Count == 2 && first[0].EndsWith("시작") && first[1].Contains("Addon Download started") && tail.Path == file, $"whole lines only: {string.Join("|", first)}");
+            w.Write(System.Text.Encoding.UTF8.GetBytes("END : Download speed 1.0 KB/s\r\n"));
+            w.Flush();
+            var second = tail.ReadNew(logs, started);
+            Check(second.Count == 1 && second[0] == "17:17:08 BACKEND : Download speed 1.0 KB/s", $"rest of the line: {string.Join("|", second)}");
+            Check(tail.ReadNew(logs, started).Count == 0, "nothing new");
+        }
     }
 
     private async Task ModUpdates()

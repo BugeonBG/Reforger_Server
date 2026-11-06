@@ -48,6 +48,8 @@ public sealed partial class MainViewModel
         base.OnPropertyChanged(nameof(OrphanModFilesText));
         base.OnPropertyChanged(nameof(OrphanModFiles));
         RefreshCommands();
+        if (IsModFilterActive)
+            RaiseModFilterChanged();
     }
 
     /// <summary>Removes the mod from the list and deletes its downloaded files, after asking.</summary>

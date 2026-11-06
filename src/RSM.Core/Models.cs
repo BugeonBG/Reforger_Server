@@ -39,6 +39,35 @@ public sealed class ServerSettings
 }
 
 /// <summary>One Workshop mod. Observable so the mod grid can edit it in place.</summary>
+/// <summary>Workshop version numbers ("9.0.1", "1.5.41", "0.16.5237").</summary>
+public static class ModVersion
+{
+    /// <summary>&lt;0, 0, &gt;0 like string.Compare, comparing dot-separated numbers ("9.0.1" &gt; "8.4.1", "1.0.33" &gt; "1.0.32").
+    /// Parts that are not numbers are compared as text.</summary>
+    public static int Compare(string? a, string? b)
+    {
+        var pa = (a ?? "").Trim().Split('.', '-', '_');
+        var pb = (b ?? "").Trim().Split('.', '-', '_');
+        for (var i = 0; i < Math.Max(pa.Length, pb.Length); i++)
+        {
+            var x = i < pa.Length ? pa[i] : "0";
+            var y = i < pb.Length ? pb[i] : "0";
+            int c;
+            if (long.TryParse(x, out var nx) && long.TryParse(y, out var ny))
+                c = nx.CompareTo(ny);
+            else
+                c = string.Compare(x, y, StringComparison.OrdinalIgnoreCase);
+            if (c != 0)
+                return c;
+        }
+        return 0;
+    }
+
+    /// <summary>True when <paramref name="candidate"/> is a higher version than <paramref name="current"/>.</summary>
+    public static bool IsNewer(string? candidate, string? current) =>
+        !string.IsNullOrWhiteSpace(candidate) && !string.IsNullOrWhiteSpace(current) && Compare(candidate, current) > 0;
+}
+
 public sealed class ModEntry : ObservableObject
 {
     private string _modId = "";
@@ -96,6 +125,22 @@ public sealed class ModEntry : ObservableObject
     public string InstalledText =>
         _installed == null ? "안 받음" : _installed.Version.Length > 0 ? $"{_installed.Version} · {_installed.SizeText}" : _installed.SizeText;
 
+    //---------------------------------------------------------------- download while the server starts (not saved)
+    private string _downloadText = "";
+
+    /// <summary>"받기 대기 중" / "받는 중 46%" / "방금 받음" while the server fetches mods; empty otherwise.</summary>
+    public string DownloadText
+    {
+        get => _downloadText;
+        set
+        {
+            if (Set(ref _downloadText, value ?? ""))
+                base.OnPropertyChanged(nameof(HasDownloadText));
+        }
+    }
+
+    public bool HasDownloadText => _downloadText.Length > 0;
+
     //---------------------------------------------------------------- update state (not saved)
     private string _latestVersion = "";
     private string _runningVersion = "";
@@ -106,10 +151,11 @@ public sealed class ModEntry : ObservableObject
     /// <summary>Version the running server loaded; empty while the server is off.</summary>
     public string RunningVersion { get => _runningVersion; set => Set(ref _runningVersion, value ?? ""); }
 
-    /// <summary>A newer version exists than the one pinned here, or than the one the running server has.</summary>
+    /// <summary>A newer version exists than the one pinned here, or than the one the running server has.
+    /// Only ever upwards: the Workshop page sometimes shows an older number than the one in use.</summary>
     public bool HasUpdate =>
         LatestVersion.Length > 0 &&
-        (Version.Length > 0 ? Version != LatestVersion : RunningVersion.Length > 0 && RunningVersion != LatestVersion);
+        (Version.Length > 0 ? ModVersion.IsNewer(LatestVersion, Version) : RunningVersion.Length > 0 && ModVersion.IsNewer(LatestVersion, RunningVersion));
 
     /// <summary>For the "최신" column.</summary>
     public string LatestText =>

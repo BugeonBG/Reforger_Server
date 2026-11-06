@@ -473,6 +473,8 @@ public sealed partial class MainViewModel : ObservableObject
         base.OnPropertyChanged(nameof(EnabledModCount));
         base.OnPropertyChanged(nameof(ModsBadgeText));
         base.OnPropertyChanged(nameof(ModCountText));
+        if (IsModFilterActive)
+            RaiseModFilterChanged();
     }
 
     private void SetAllEnabled(bool on)
@@ -1203,6 +1205,7 @@ public sealed partial class MainViewModel : ObservableObject
             Monitor.OnServerLog(line);
             if (Monitor.Connections.Version != issuesBefore && Monitor.Connections.Issues() is [var issue, ..])
                 AppendLog($"접속 문제: {issue.Who} — {issue.Cause.Title}. '서버 현황' 화면에서 이 플레이어에게 보낼 안내문을 복사할 수 있습니다.");
+            OnServerOutputForDownloads(line);
             OnServerOutput(line);
         };
         runner.Exited += code => Ui(() =>
@@ -1212,6 +1215,7 @@ public sealed partial class MainViewModel : ObservableObject
                 _server = null;
                 IsServerRunning = false;
                 StatusText = "서버 정지됨";
+                EndModDownloadWatch();
                 ForgetRunningModVersions();
                 RefreshInstalledMods();
                 JoinCode = "";
@@ -1239,6 +1243,7 @@ public sealed partial class MainViewModel : ObservableObject
         IsServerRunning = true;
         StatusText = $"서버 실행 중 — UDP {BindPort} (A2S {A2sPort})";
         _runningVersionsTask = RecordRunningModVersionsAsync();
+        BeginModDownloadWatch();
         return true;
     }
 

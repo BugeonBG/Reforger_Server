@@ -84,6 +84,9 @@ public sealed partial class ServerMonitorViewModel : ObservableObject
     public string SystemRamText { get => _systemRamText; private set => Set(ref _systemRamText, value); }
     public string NetUpText { get => _netUpText; private set => Set(ref _netUpText, value); }
     public string NetDownText { get => _netDownText; private set => Set(ref _netDownText, value); }
+
+    /// <summary>The whole PC's download rate at the last sample (bytes/s).</summary>
+    public double NetDownBytesPerSec { get; private set; }
     public string FpsText { get => _fpsText; private set => Set(ref _fpsText, value); }
     public string UptimeText { get => _uptimeText; private set => Set(ref _uptimeText, value); }
     public string ServerNameText { get => _serverNameText; private set => Set(ref _serverNameText, value); }
@@ -217,6 +220,7 @@ public sealed partial class ServerMonitorViewModel : ObservableObject
             var down = Math.Max(0, n.Received - ln.Received) / elapsed.TotalSeconds;
             NetUpText = "↑ " + FormatRate(up);
             NetDownText = "↓ " + FormatRate(down);
+            NetDownBytesPerSec = down;
             netRate = up + down;
         }
         _lastNet = net;
