@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -30,8 +33,12 @@ public sealed class DependencyReport
     /// starting mod needs is listed too; the caller decides what is missing).</summary>
     public List<RequiredMod> Required { get; } = new();
 
-    /// <summary>Ids that could not be looked up (offline, removed, site changed).</summary>
+    /// <summary>Ids that could not be looked up (offline, site changed) — or that are gone (see <see cref="NotFound"/>).</summary>
     public List<string> Failed { get; } = new();
+
+    /// <summary>Ids the Workshop answered "no such mod" for: deleted or made private. A server with one of
+    /// these switched on refuses to start ("Addon was not found on workshop").</summary>
+    public List<string> NotFound { get; } = new();
 }
 
 /// <summary>Reads mod details from the public Workshop site (reforger.armaplatform.com).
@@ -156,6 +163,8 @@ public sealed partial class WorkshopClient
                 if (!ok || mod == null)
                 {
                     report.Failed.Add(id);
+                    if (ok)
+                        report.NotFound.Add(id);
                     continue;
                 }
                 report.Mods[id] = mod;

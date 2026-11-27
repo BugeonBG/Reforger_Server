@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 namespace RSM.Core;
 
 // Mod downloads while the server starts: which mod, how far, how fast, and whether anything is moving

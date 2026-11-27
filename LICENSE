@@ -1,0 +1,33 @@
+RSM (Reforger Server Manager)
+Copyright (c) 2026 Anu. All rights reserved.
+
+이 저장소의 소스 코드, 실행 파일(RSM.exe), 문서, 이미지 등 모든 파일의
+저작권과 모든 권리는 Anu에게 있습니다.
+
+Anu의 사전 서면 허락 없이 이 소프트웨어의 전부 또는 일부를 복제, 수정,
+배포, 재배포, 판매, 대여, 2차 저작물 작성에 사용하는 것을 금합니다.
+허락받은 사람은 허락받은 범위 안에서만 사용할 수 있습니다.
+
+이 소프트웨어는 "있는 그대로" 제공되며, 명시적이든 묵시적이든 어떠한
+보증도 하지 않습니다. 이 소프트웨어를 사용하여 생긴 손해에 대해
+저작권자는 책임지지 않습니다.
+
+---
+
+All files in this repository — source code, the RSM.exe program, documents
+and images — are the property of Anu. All rights reserved.
+
+No part of this software may be copied, modified, distributed, sold, rented
+or used to create derivative works without Anu's prior written permission.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY
+ARISING FROM THE USE OF THE SOFTWARE.
+
+---
+
+예외 / Exception
+src/RSM.App/Fonts/ 의 Pretendard 글꼴은 Anu의 저작물이 아니며,
+함께 들어 있는 Pretendard-LICENSE.txt (SIL Open Font License 1.1)를 따릅니다.
+The Pretendard font files in src/RSM.App/Fonts/ are not Anu's work and are
+licensed under the SIL Open Font License 1.1 (see Pretendard-LICENSE.txt).

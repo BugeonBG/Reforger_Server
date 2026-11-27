@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 namespace RSM.Core;
 
 // RSM updating itself from GitHub Releases (see AppUpdater). Checked when the program opens;

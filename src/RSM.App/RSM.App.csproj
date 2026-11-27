@@ -1,6 +1,12 @@
+<!-- Copyright (c) 2026 Anu. All rights reserved. -->
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- the exe/dll "Details" tab shows these -->
+    <Authors>Anu</Authors>
+    <Company>Anu</Company>
+    <Product>RSM (Reforger Server Manager)</Product>
+    <Copyright>Copyright © 2026 Anu. All rights reserved.</Copyright>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
@@ -9,7 +15,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>RSM</AssemblyName>
     <RootNamespace>RSM.App</RootNamespace>
-    <Version>0.17.0</Version>
+    <Version>0.20.0</Version>
     <!-- GitHub "owner/repo" the program updates itself from; the release workflow passes
          -p:UpdateRepository=$(github.repository). Empty for builds made with build.bat. -->
     <UpdateRepository Condition="'$(UpdateRepository)' == ''"></UpdateRepository>

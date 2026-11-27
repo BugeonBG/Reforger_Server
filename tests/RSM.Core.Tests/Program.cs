@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 using System.Text.Json.Nodes;
 using RSM.Core;
 
@@ -79,7 +82,10 @@ sealed class Tests
             await RunAsync(ModUpdates);
             await RunAsync(ModUpdatesNeverDowngrade);
             Run(ModVersionCompare);
+            Run(() => Check(KickCauses.Describe(1, 1) is { Code: "SYSTEM_FAILURE", Severity: LogSeverity.Problem } k && k.Title.Contains("내부 오류") && k.ForPlayer.Contains("워크숍"), "kick 1/1 SYSTEM_FAILURE explained"));
             Run(ModSearchAndFilter);
+            Run(ModCategories);
+            await RunAsync(GoneModFoundByLookup);
             Run(ModDownloadTracking);
             Run(LogFileTailFollowsRunLog);
             if (!OperatingSystem.IsWindows())
@@ -88,6 +94,7 @@ sealed class Tests
                 await RunAsync(ViewModelEndToEnd);
                 await RunAsync(FindServerAndAutoUpdate);
                 await RunAsync(ModUpdatesWhileServerRuns);
+                await RunAsync(GoneModStopsServerStart);
             }
         }
         finally
@@ -1801,6 +1808,176 @@ sealed class Tests
         return (vm, ui, site, config);
     }
 
+    private const string GoneId = "6A3873C87EA8E2BA";
+
+    // the Workshop page of WCS_M1A1_Upgrade was deleted; a list import brought it back and the server would not start
+    private async Task GoneModFoundByLookup()
+    {
+        var (vm, ui, site, _) = ModUpdateSetup("gonelookup");
+        vm.Mods.Add(new ModEntry(GoneId, "WCS_M1A1_Upgrade", "8.4.0")); // no page on the fake site = 404
+        await vm.CheckDependenciesCommand.ExecuteAsync();
+        var gone = vm.Mods.First(m => m.ModId == GoneId);
+        Check(vm.IsGoneFromWorkshop(GoneId) && !vm.IsGoneFromWorkshop(RhsId), "404 = gone, others not");
+        Check(ui.Confirms.Any(c => c.Contains("삭제됐거나 비공개") && c.Contains("WCS_M1A1_Upgrade") && c.Contains(GoneId)), "asked about it:\n" + string.Join("\n---\n", ui.Confirms));
+        Check(!gone.IsEnabled && vm.Mods.First(m => m.ModId == RhsId).IsEnabled, "only the gone mod switched off");
+        Check(!vm.LogLines.Any(l => l.Contains("정보를 가져오지 못한 모드")), "not reported as a network problem");
+        var asked = ui.Confirms.Count;
+        gone.IsEnabled = true;
+        await vm.CheckDependenciesCommand.ExecuteAsync();
+        Check(ui.Confirms.Count(c => c.Contains("삭제됐거나 비공개")) == 1 && vm.LogLines.Count(l => l.Contains("경고: 워크숍에서 삭제됐거나")) == 2, "asked once, warned again");
+
+        // offline is not "gone"
+        var (vm2, ui2, site2, _) = ModUpdateSetup("goneoffline");
+        var offline = new FakeWorkshop.FakeSite { Offline = true };
+        var vm3 = new MainViewModel(ui2, null, new AppSettingsStore(Path.Combine(_tmp, "goneoffline", "app.json")), FakeWorkshop.Client(offline));
+        vm3.Mods.Add(new ModEntry(GoneId, "WCS_M1A1_Upgrade", "8.4.0"));
+        await vm3.CheckDependenciesCommand.ExecuteAsync();
+        Check(!vm3.IsGoneFromWorkshop(GoneId) && vm3.Mods[^1].IsEnabled && vm3.LogLines.Any(l => l.Contains("인터넷 연결을 확인")), "offline: nothing switched off");
+    }
+
+    private async Task GoneModStopsServerStart()
+    {
+        var (vm, ui, site, _) = ModUpdateSetup("gonestart");
+        site.Pages[GoneId] = FakeWorkshop.Page(GoneId, "WCS_M1A1_Upgrade", "8.4.0"); // RSM does not know yet
+        vm.Mods.Add(new ModEntry(GoneId, "WCS_M1A1_Upgrade", "8.4.0"));
+        vm.RestartPause = TimeSpan.Zero;
+        Directory.CreateDirectory(vm.ServerDir);
+        var starts = Path.Combine(_tmp, "gonestart", "starts.txt");
+        var config = vm.ConfigPath;
+        // what the real server printed (11:10:56), then it quits; once the mod is off it runs
+        WriteScript(ServerTools.ServerExe(vm.ServerDir), $"""
+            echo start >> "{starts}"
+            if grep -q '"{GoneId}"' "{config}"; then
+              echo "BACKEND   (E): Addon {GoneId} - Addon was not found on workshop."
+              echo "BACKEND   (E): 1 addons are not downloadable! Cannot start until they are removed from server config."
+              echo "ENGINE    (E): Unable to initialize the game"
+              exit 0
+            fi
+            echo "DEFAULT      : Entered online game state."
+            sleep 30
+            """);
+        int Starts() => File.Exists(starts) ? File.ReadAllLines(starts).Length : 0;
+        async Task WaitFor(Func<bool> cond) { for (var i = 0; i < 100 && !cond(); i++) await Task.Delay(50); }
+
+        vm.StartServerCommand.Execute(null);
+        await WaitFor(() => Starts() >= 2);
+        await WaitFor(() => vm.IsServerRunning && Starts() == 2);
+        Check(ui.Confirms.Any(c => c.Contains("WCS_M1A1_Upgrade") && c.Contains("끄고 서버를 다시 시작할까요")), "offered after the failed start:\n" + string.Join("\n---\n", ui.Confirms));
+        Check(Starts() == 2 && vm.IsServerRunning && !vm.Mods.First(m => m.ModId == GoneId).IsEnabled, $"switched off and started again ({Starts()} starts)");
+        Check(vm.IsGoneFromWorkshop(GoneId) && vm.LogLines.Any(l => l.Contains("서버가 시작되지 않은 이유: 워크숍에서 사라진 모드")), "explained");
+        vm.StopServerCommand.Execute(null);
+        await WaitFor(() => !vm.IsServerRunning);
+    }
+
+    private void ModCategories()
+    {
+        var dir = Path.Combine(_tmp, "cat");
+        Directory.CreateDirectory(Path.Combine(dir, "server", "Configs"));
+        var configPath = Path.Combine(dir, "server", "Configs", "server.json");
+        var store = new AppSettingsStore(Path.Combine(dir, "app.json"));
+        store.Save(new AppSettings
+        {
+            ServerDir = Path.Combine(dir, "server"),
+            ConfigPath = configPath,
+            ProfileDir = Path.Combine(dir, "server", "profile"),
+            ModCategoryNames = new List<string> { "현대전", "좀비전", "2차대전", "베트남전" },
+            // the 0.19 form (one category per mod) is still read
+            ModCategories = new Dictionary<string, string> { ["595F2BF2F44836FB"] = "현대전" },
+        });
+        var vm = new MainViewModel(new FakeUi(), null, store);
+
+        Check(vm.ModCategoryTabs.Select(t => t.Name).SequenceEqual(new[] { "전체", "현대전", "좀비전", "2차대전", "베트남전", "공통", "미분류" }), "tabs");
+        Check(vm.SelectedModCategory == MainViewModel.AllTabKey && !vm.IsCategoryTabSelected, "전체 open");
+
+        var rhs = new ModEntry("595F2BF2F44836FB", "RHS - Status Quo");     // saved as 현대전 (0.19)
+        var zomb = new ModEntry("F1D4B9B5245B36ED", "Project Outbreak");    // nothing saved
+        var ace = new ModEntry("65AD7D0D9941A380", "ACE Medical");          // system mod by name
+        var sat = new ModEntry("5AAAC70D754245DD", "Server Admin Tools");   // system mod by phrase
+        var wcs = new ModEntry("64610AFB74AA9842", "WCS_Core");             // "Core" alone is not a system word
+        foreach (var m in new[] { rhs, zomb, ace, sat, wcs })
+            vm.Mods.Add(m);
+
+        // what the program guesses
+        Check(ModCategoryDetector.LooksLikeSystemMod("BetterUI") && ModCategoryDetector.LooksLikeSystemMod("Bacon Loadout Editor")
+              && ModCategoryDetector.LooksLikeSystemMod("RAMI 한국어 번역") && !ModCategoryDetector.LooksLikeSystemMod("RHS - Content Pack 01")
+              && !ModCategoryDetector.LooksLikeSystemMod("New York") && !ModCategoryDetector.LooksLikeSystemMod("Spacecraft"), "detector");
+        Check(ace.IsCommon && sat.IsCommon && !wcs.IsCommon && !rhs.IsCommon && !zomb.IsCommon, "system mods guessed common");
+        Check(ace.CategoryText == "공통" && ace.CategoryOptions.All(o => o.IsChecked) && ace.CommonHint.Contains("ACE"), "common = every box ticked");
+        Check(rhs.CategoryText == "현대전" && rhs.CategoryOptions.Single(o => o.IsChecked).Name == "현대전", "0.19 category migrated");
+        Check(zomb.CategoryText == "미분류", "unsaved mod uncategorised");
+
+        int Count(string key) => vm.ModCategoryTabs.First(t => t.Key == key).Count;
+        Check(Count("") == 5 && Count("현대전") == 3 && Count("좀비전") == 2 && Count(MainViewModel.CommonTabKey) == 2
+              && Count(MainViewModel.UncategorisedTabKey) == 2, "counts: common mods are in every category");
+
+        Check(vm.TrySaveConfig(false) && !vm.IsDirty, "config saved, clean");
+
+        // tick a mod into two categories from its own list
+        zomb.CategoryOptions.First(o => o.Name == "좀비전").IsChecked = true;
+        zomb.CategoryOptions.First(o => o.Name == "2차대전").IsChecked = true;
+        Check(zomb.CategoryText == "좀비전 · 2차대전" && !vm.IsDirty, "in two categories, server config stays clean");
+        Check(store.Load().ModCategorySets["F1D4B9B5245B36ED"].SequenceEqual(new[] { "좀비전", "2차대전" }), "saved to RSM settings, in category order");
+        Check(Count("좀비전") == 3 && Count(MainViewModel.UncategorisedTabKey) == 1, "counts follow");
+
+        // open a category tab: only its mods (common ones included), and the 포함 box
+        vm.SelectedModCategory = "좀비전";
+        Check(vm.IsCategoryTabSelected && vm.ModCategoryTabs.Single(t => t.IsSelected).Name == "좀비전", "tab selected");
+        Check(vm.ModMatchesFilter(zomb) && vm.ModMatchesFilter(ace) && vm.ModMatchesFilter(sat) && !vm.ModMatchesFilter(rhs) && !vm.ModMatchesFilter(wcs), "좀비전 shows its mods + common");
+        Check(zomb.IsInSelectedCategory && ace.IsInSelectedCategory && !rhs.IsInSelectedCategory, "포함 box");
+        vm.ShowOtherModsInCategory = true;
+        Check(vm.ModMatchesFilter(rhs) && vm.ModMatchesFilter(wcs), "show the others to tick them in");
+        wcs.IsInSelectedCategory = true;          // 포함 ticked in the 좀비전 tab
+        Check(wcs.CategoryText == "좀비전" && store.Load().ModCategorySets.ContainsKey("64610AFB74AA9842"), "ticked in from the tab");
+        zomb.IsInSelectedCategory = false;        // and out again
+        Check(zomb.CategoryText == "2차대전", "ticked out from the tab");
+
+        // taking a common mod out of one category: no longer common, still in all the others
+        sat.IsInSelectedCategory = false;
+        Check(!sat.IsCommon && sat.CategoryText == "현대전 · 2차대전 · 베트남전" && store.Load().ModCommon["5AAAC70D754245DD"] == false, "common → all but 좀비전");
+
+        // make a mod common by hand; switching it off brings its own categories back
+        rhs.IsCommon = true;
+        Check(rhs.CategoryText == "공통" && rhs.CommonHint.Contains("직접") && store.Load().ModCommon["595F2BF2F44836FB"], "made common by hand");
+        rhs.IsCommon = false;
+        Check(rhs.CategoryText == "현대전", "own categories kept while common");
+        // guessed-common mod switched off stays off even though its name still says ACE
+        ace.IsCommon = false;
+        ace.Name = "ACE Medical 2";
+        Check(!ace.IsCommon && ace.CategoryText == "미분류", "the user's choice beats the guess");
+
+        vm.SelectedModCategory = MainViewModel.CommonTabKey;
+        Check(!vm.IsCategoryTabSelected && vm.ModMatchesFilter(ace) == false && !vm.ModMatchesFilter(zomb), "공통 tab");
+        vm.SelectedModCategory = MainViewModel.UncategorisedTabKey;
+        Check(vm.ModMatchesFilter(ace) && !vm.ModMatchesFilter(rhs), "미분류 tab");
+        vm.SelectedModCategory = "베트남전";
+        Check(vm.HasModCategoryEmptyText == (vm.ModCategoryTabs.First(t => t.Key == "베트남전").Count == 0), "empty-tab hint follows the count");
+        vm.SelectedModCategory = MainViewModel.AllTabKey;
+        Check(!vm.HasModCategoryEmptyText, "no hint on 전체");
+        vm.SelectedModCategory = "없는 분류";
+        Check(vm.SelectedModCategory == MainViewModel.AllTabKey, "unknown tab → 전체");
+
+        // categories never leak into the server config json
+        var json = ModListParser.ToJsonArray(vm.Mods).ToJsonString();
+        Check(!json.Contains("categor", StringComparison.OrdinalIgnoreCase) && !json.Contains("현대전") && !json.Contains("common", StringComparison.OrdinalIgnoreCase), "never written to config.json");
+        Check(store.Load().ModCategories == null, "old form not written back");
+
+        // a fresh instance reloads everything
+        var vm2 = new MainViewModel(new FakeUi(), null, store);
+        var zomb2 = new ModEntry("F1D4B9B5245B36ED");
+        var sat2 = new ModEntry("5AAAC70D754245DD", "Server Admin Tools");
+        var ace2 = new ModEntry("65AD7D0D9941A380", "ACE Medical");
+        vm2.Mods.Add(zomb2); vm2.Mods.Add(sat2); vm2.Mods.Add(ace2);
+        Check(zomb2.CategoryText == "2차대전" && sat2.CategoryText == "현대전 · 2차대전 · 베트남전" && !ace2.IsCommon, "reloaded in a new instance");
+
+        // forget the hand-made 공통 choices → back to the name guess
+        var ui3 = new FakeUi { ConfirmAnswer = true };
+        var vm3 = new MainViewModel(ui3, null, store);
+        var ace3 = new ModEntry("65AD7D0D9941A380", "ACE Medical");
+        vm3.Mods.Add(ace3);
+        vm3.ResetCommonGuessCommand.Execute(null);
+        Check(ace3.IsCommon && store.Load().ModCommon.Count == 0, "re-guessed");
+    }
+
     private void ModSearchAndFilter()
     {
         var store = new AppSettingsStore(Path.Combine(_tmp, "modsearch.json"));
@@ -2049,6 +2226,9 @@ sealed class Tests
         Check(vm.StatusText == "서버가 모드를 받는 중 — RHS - Status Quo 85% (163/191 MB)", $"download progress in the status line: {vm.StatusText}");
         await WaitFor(() => vm.StatusText.Contains("온라인"));
         Check(vm.JoinCode == "0268219882" && vm.StatusText == "서버 온라인 — 다이렉트 접속 코드 0268219882", $"online: {vm.StatusText}");
+        Check(vm.HasJoinCode && vm.JoinCode == "0268219882" && vm.CopyJoinCodeCommand.CanExecute(null), $"join code shown: {vm.JoinCode}");
+        vm.CopyJoinCodeCommand.Execute(null);
+        Check(ui.Clipboard == "0268219882" && vm.StatusText.Contains("0268219882"), "join code copied");
         await WaitFor(() => vm.LogLines.Any(l => l.Contains("접속 문제: Tester")));
         Check(vm.LogLines.Any(l => l.Contains("접속 문제: Tester — 모드 파일이 서버와 다름")), "failed join announced in the console");
         await vm.CheckModUpdatesAsync(automatic: true); // waits for the start-up snapshot, then compares
@@ -2092,7 +2272,8 @@ sealed class Tests
         Check(ui.Confirms.Any(c => c.Contains("접속자 5명")) && Starts() == 4, "manual: asked, restarted");
 
         vm.StopServerCommand.Execute(null);
-        await WaitFor(() => !vm.IsServerRunning);
+        // the exit handler clears the running versions right after IsServerRunning goes false (on another thread here)
+        await WaitFor(() => !vm.IsServerRunning && floating.RunningVersion == "");
         Check(!vm.IsServerRunning && floating.RunningVersion == "" && !floating.HasUpdate, "server off: nothing pending");
         vm.Shutdown();
     }

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 using System.Text.RegularExpressions;
 
 namespace RSM.Core;
@@ -150,6 +153,9 @@ public static partial class LogExplainer
         R(@"Addon Download started", LogSeverity.Info, "모드 다운로드 시작", "서버가 워크숍에서 모드를 받기 시작했습니다. 서버는 켜질 때만 모드를 받습니다."),
         R(@"\[[=>_]+\]\s*\d{1,3}%|Download speed|Downloading \d+ addons|Downloading [0-9A-F]{16} version", LogSeverity.Info, "모드 받는 중",
           "모드 다운로드 진행 상황입니다. 다 받을 때까지 서버는 온라인이 되지 않습니다. 큰 모드는 몇 GB라 시간이 걸립니다."),
+        R(@"Addon was not found on workshop|addons are not downloadable", LogSeverity.Problem, "워크숍에서 사라진 모드",
+          "목록에 있는 모드가 워크숍에서 삭제됐거나 비공개로 바뀌었습니다. 서버는 받을 수 없는 모드가 하나라도 켜져 있으면 시작하지 않습니다. 줄에 나온 16자리 ID가 그 모드입니다.",
+          "'모드' 화면에서 그 모드를 끄거나 지우고 다시 시작하세요. RSM이 끄고 다시 시작할지 물어봅니다."),
         R(@"Required addons are ready", LogSeverity.Good, "모드 준비 완료", "필요한 모드를 다 받았습니다. 이제 맵을 불러옵니다."),
         R(@"Creating game instance", LogSeverity.Info, "게임 버전", "서버의 게임 버전입니다. 플레이어의 게임 버전과 같아야 접속할 수 있습니다."),
         R(@"Entities load|Subscene load|Game::LoadEntities|Terrain load|Map load time", LogSeverity.Info, "맵 불러오는 중", "맵과 맵 위의 물체를 불러오고 있습니다."),

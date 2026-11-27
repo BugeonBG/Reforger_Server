@@ -1,3 +1,4 @@
+<!-- Copyright (c) 2026 Anu. All rights reserved. -->
 <Application x:Class="RSM.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 namespace RSM.Core;
 
 /// <summary>Why a player was disconnected, from the numbers the server logs:
@@ -47,6 +50,13 @@ public static class KickCauses
 
     public static KickCause Describe(int group, int reason) => (group, reason) switch
     {
+        (1, 1) => new(1, 1, "SYSTEM_FAILURE", LogSeverity.Problem, "내부 오류 (동기화 실패)",
+            "플레이어 게임이 서버에서 받은 게임 상태(유닛·차량·장비)를 처리하지 못했습니다. 대부분 플레이어 PC의 모드 파일이 깨졌거나 서버와 버전이 다른 경우이고, 서버 모드 버전을 막 바꾼 직후에 자주 생깁니다. 여러 사람이 동시에 겪는다면 서버 쪽 모드 오류(콘솔의 SCRIPT (E) 줄)를 확인하세요. 같은 사람이 2분 안에 다시 들어오면 서버가 맡아둔 예전 캐릭터에 다시 붙으면서 또 끊길 수 있습니다.",
+            "게임이 서버 정보를 처리하다 오류가 나서 접속이 끊겼어요 (내부 오류 / SYSTEM_FAILURE).\n" +
+            "1) 게임을 완전히 껐다 켜 주세요.\n" +
+            "2) 그래도 안 되면 게임 메인 화면 → 워크숍 → 다운로드한 모드에서 모드를 모두 지우고, 다시 접속해서 새로 받아 주세요.\n" +
+            "3) Steam에서 '게임 파일 무결성 검사'를 해 주세요.\n" +
+            "4) 끊긴 직후라면 2~3분 기다렸다가 다시 들어와 주세요."),
         (1, 3) => new(1, 3, "CONNECTION_FAILURE", LogSeverity.Caution, "연결 실패",
             "플레이어와 서버 사이의 연결이 중간에 끊겼습니다. 대부분 플레이어 쪽 인터넷(와이파이, VPN, 공유기) 문제입니다. 여러 사람이 동시에 겪는다면 서버 PC의 인터넷이나 포트포워딩을 확인하세요.",
             "서버와 연결이 중간에 끊겨서 접속이 안 됐어요 (연결 실패).\n" +

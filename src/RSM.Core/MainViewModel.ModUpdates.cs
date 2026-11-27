@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 namespace RSM.Core;
 
 // Mod updates: mod makers publish new versions often. The program asks the Workshop for each mod's newest
@@ -347,8 +350,29 @@ public sealed partial class MainViewModel
 {
     private string _joinCode = "";
 
-    /// <summary>Direct Join Code the server got this run (empty until it is online).</summary>
-    public string JoinCode { get => _joinCode; private set => Set(ref _joinCode, value); }
+    /// <summary>Direct Join Code the server got this run (empty until it is online). It changes every start.</summary>
+    public string JoinCode
+    {
+        get => _joinCode;
+        private set
+        {
+            if (Set(ref _joinCode, value ?? ""))
+            {
+                base.OnPropertyChanged(nameof(HasJoinCode));
+                _copyJoinCode?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasJoinCode => _joinCode.Length > 0;
+
+    /// <summary>Puts the join code on the clipboard, to paste into Discord etc.</summary>
+    public RelayCommand CopyJoinCodeCommand => _copyJoinCode ??= new RelayCommand(() =>
+    {
+        _ui.SetClipboardText(JoinCode);
+        StatusText = $"서버 접속 코드 {JoinCode}를 클립보드에 복사했습니다.";
+    }, () => HasJoinCode);
+    private RelayCommand? _copyJoinCode;
 
     // status line follows what the server is doing while it starts: mod downloads, then online + join code
     private void OnServerOutput(string line)

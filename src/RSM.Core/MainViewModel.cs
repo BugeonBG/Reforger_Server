@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -92,6 +95,7 @@ public sealed partial class MainViewModel : ObservableObject
         AutoUpdateMods = app.AutoUpdateMods;
         ModCheckMinutes = app.ModCheckMinutes > 0 ? app.ModCheckMinutes : 30;
         ModRestartPolicy = app.ModRestartPolicy;
+        LoadCategories(app);
         _loading = false;
         var migrated = MigrateDefaultPaths();
 
@@ -451,13 +455,19 @@ public sealed partial class MainViewModel : ObservableObject
     private void OnModsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.OldItems != null)
-            foreach (ModEntry m in e.OldItems) m.PropertyChanged -= OnModPropertyChanged;
+            foreach (ModEntry m in e.OldItems)
+            {
+                m.PropertyChanged -= OnModPropertyChanged;
+                m.CategoryToggleRequested -= OnModCategoryToggleRequested;
+            }
         if (e.NewItems != null)
             foreach (ModEntry m in e.NewItems)
             {
                 m.PropertyChanged += OnModPropertyChanged;
+                m.CategoryToggleRequested += OnModCategoryToggleRequested;
                 ApplyKnownVersions(m);
                 m.Installed = _installedMods.FirstOrDefault(i => i.Id == m.ModId);
+                ApplyCategoryState(m);
                 if (!_workshopScenarios.ContainsKey(m.ModId))
                     QueueScenarioLookup();
             }
@@ -465,6 +475,7 @@ public sealed partial class MainViewModel : ObservableObject
         MarkDirty();
         RefreshCommands();
         RaiseModCounts();
+        RefreshCategoryCounts();
         Browser?.RefreshAdded();
     }
 
@@ -492,6 +503,12 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (e.PropertyName is nameof(ModEntry.HasUpdate))
             base.OnPropertyChanged(nameof(ModsWithUpdates));
+        // categories are RSM labels, saved to RSM's own settings (not the server config)
+        if (sender is ModEntry cm && OnModCategoryPropertyChanged(cm, e.PropertyName))
+            return;
+        // a name (typed, or found on the Workshop / on disk) can make it look like a system mod
+        if (sender is ModEntry nm && e.PropertyName is nameof(ModEntry.Name) or nameof(ModEntry.Installed) or nameof(ModEntry.ModId))
+            OnModIdentityChanged(nm);
         // update state is shown, not saved
         if (e.PropertyName is nameof(ModEntry.LatestVersion) or nameof(ModEntry.RunningVersion) or nameof(ModEntry.HasUpdate) or nameof(ModEntry.LatestText)
             or nameof(ModEntry.Installed) or nameof(ModEntry.IsInstalled) or nameof(ModEntry.InstalledText))
@@ -1176,6 +1193,18 @@ public sealed partial class MainViewModel : ObservableObject
                          "\n\n이대로 시작하면 서버가 뜨지 못할 수 있습니다. '모드' 화면의 '필요 모드 확인'을 누르면 한 번에 정리됩니다.\n\n그래도 서버를 시작할까요?"))
             return false;
 
+        // a switched-on mod that is gone from the Workshop stops the server before it starts
+        var gone = Mods.Where(m => m.IsEnabled && _goneFromWorkshop.Contains(m.ModId)).ToList();
+        if (gone.Count > 0)
+        {
+            if (automatic || _ui.Confirm(GonePrompt(gone, starting: true)))
+            {
+                foreach (var m in gone)
+                    m.IsEnabled = false;
+                AppendLog("워크숍에서 사라진 모드를 껐습니다: " + string.Join(", ", gone.Select(Label)));
+            }
+        }
+
         if (!TrySaveConfig(showSuccess: false))
             return false;
 
@@ -1206,6 +1235,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (Monitor.Connections.Version != issuesBefore && Monitor.Connections.Issues() is [var issue, ..])
                 AppendLog($"접속 문제: {issue.Who} — {issue.Cause.Title}. '서버 현황' 화면에서 이 플레이어에게 보낼 안내문을 복사할 수 있습니다.");
             OnServerOutputForDownloads(line);
+            NoteModGoneFromWorkshop(line);
             OnServerOutput(line);
         };
         runner.Exited += code => Ui(() =>
@@ -1222,6 +1252,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             AppendLog($"서버가 종료되었습니다. (종료 코드 {code})");
             runner.Dispose();
+            OfferToDropGoneModsAfterFailedStart();
         });
 
         AppendLog($"> {exe} {args}");
@@ -1378,8 +1409,15 @@ public sealed partial class MainViewModel : ObservableObject
                 m.Name = info.Name;
         }
 
-        if (report.Failed.Count > 0)
-            AppendLog($"워크숍에서 정보를 가져오지 못한 모드: {string.Join(", ", report.Failed)} — 인터넷 연결이나 모드 ID를 확인하세요.");
+        // "no such page" only means deleted when the site answered for other mods in the same lookup;
+        // if nothing was found at all, the site (or its address) is the problem, not the mods
+        var siteWorks = report.Mods.Count > 0;
+        var gone = siteWorks ? report.NotFound : new List<string>();
+        var unreachable = report.Failed.Except(gone, StringComparer.OrdinalIgnoreCase).ToList();
+        if (unreachable.Count > 0)
+            AppendLog($"워크숍에서 정보를 가져오지 못한 모드: {string.Join(", ", unreachable)} — 인터넷 연결을 확인하고 잠시 뒤 다시 해 보세요.");
+        if (gone.Count > 0)
+            OnModsGoneFromWorkshop(gone, ask: true);
 
         // remember what each mod needs, so starting the server can warn without asking the Workshop again
         foreach (var (id, info) in report.Mods)
@@ -1599,6 +1637,9 @@ public sealed partial class MainViewModel : ObservableObject
                 AutoUpdateMods = AutoUpdateMods,
                 ModCheckMinutes = ModCheckMinutes,
                 ModRestartPolicy = ModRestartPolicy,
+                ModCategoryNames = new List<string>(_categoryNames),
+                ModCategorySets = CategorySetsForSaving(),
+                ModCommon = new Dictionary<string, bool>(_commonOverride, StringComparer.OrdinalIgnoreCase),
             });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

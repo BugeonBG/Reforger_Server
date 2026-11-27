@@ -1,3 +1,4 @@
+<!-- Copyright (c) 2026 Anu. All rights reserved. -->
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Plain console runner (no test framework package needed): dotnet run -c Release -->

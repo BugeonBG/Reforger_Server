@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Text;
@@ -51,6 +54,17 @@ public partial class MainWindow : Window
         // mods page search/filter: a view over the same list, nothing is removed from it
         var modView = CollectionViewSource.GetDefaultView(_vm.Mods);
         modView.Filter = o => o is not ModEntry m || _vm.ModMatchesFilter(m);
+
+        // the "포함" column only means something while one category's tab is open
+        ModIncludeColumn.Visibility = _vm.IsCategoryTabSelected ? Visibility.Visible : Visibility.Collapsed;
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MainViewModel.IsCategoryTabSelected) or nameof(MainViewModel.SelectedCategoryName))
+            {
+                ModIncludeColumn.Visibility = _vm.IsCategoryTabSelected ? Visibility.Visible : Visibility.Collapsed;
+                ModIncludeColumn.Header = _vm.SelectedCategoryName.Length > 0 ? _vm.SelectedCategoryName : "포함";
+            }
+        };
         _vm.ModFilterChanged += () =>
         {
             // a row being edited (or the new-row) must not be pulled away under the cursor

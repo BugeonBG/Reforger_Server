@@ -1,4 +1,5 @@
 @echo off
+REM Copyright (c) 2026 Anu. All rights reserved.
 setlocal
 cd /d "%~dp0"
 title 리포저 서버 관리자 빌드

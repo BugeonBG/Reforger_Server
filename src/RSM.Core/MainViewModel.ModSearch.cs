@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Anu. All rights reserved.
+// RSM (Reforger Server Manager) — 무단 복제·수정·배포를 금합니다.
+
 namespace RSM.Core;
 
 /// <summary>Which mods the mods page shows.</summary>
@@ -58,6 +61,8 @@ public sealed partial class MainViewModel
 
     public bool ModMatchesFilter(ModEntry m)
     {
+        if (!ModMatchesCategoryTab(m))
+            return false;
         switch (ModListFilter)
         {
             case ModListFilter.Downloaded when !m.IsInstalled:
